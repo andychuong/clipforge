@@ -7,7 +7,7 @@ export default function VideoPreview() {
   const containerRef = useRef<HTMLDivElement>(null);
   const { clips, currentTime, isPlaying, addClip } = useTimelineStore();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [currentClip, setCurrentClip] = useState<string | null>(null);
+  const [, setCurrentClip] = useState<string | null>(null); // Unused but needed for state management
 
   // Update current clip based on playhead position
   useEffect(() => {
@@ -16,27 +16,30 @@ export default function VideoPreview() {
       return;
     }
 
-    const clip = clips.find((c) => 
-      currentTime >= c.position + c.startTime && 
-      currentTime <= c.position + c.endTime
-    );
+    const clip = clips.find((c) => {
+      const clipStart = c.position;
+      const clipEnd = c.position + (c.endTime - c.startTime);
+      return currentTime >= clipStart && currentTime <= clipEnd;
+    });
 
     if (clip) {
       const video = videoRef.current;
       const src = clip.blobUrl || clip.path;
       
       if (video) {
-        const offset = currentTime - clip.position;
+        // Calculate the offset within the clip, then add the startTime trim
+        const offsetInClip = currentTime - clip.position;
+        const actualVideoTime = clip.startTime + offsetInClip;
         
         // Set src if it hasn't been set yet or changed
         if (!video.src || video.src !== src) {
           video.src = src;
           // Wait for video to load before setting time
           video.addEventListener('loadedmetadata', () => {
-            video.currentTime = offset;
+            video.currentTime = actualVideoTime;
           }, { once: true });
-        } else if (Math.abs(video.currentTime - offset) > 0.1) {
-          video.currentTime = offset;
+        } else if (Math.abs(video.currentTime - actualVideoTime) > 0.1) {
+          video.currentTime = actualVideoTime;
         }
       }
       
@@ -62,15 +65,17 @@ export default function VideoPreview() {
     const video = videoRef.current;
     if (!video) return;
 
-    const clip = clips.find((c) => 
-      currentTime >= c.position + c.startTime && 
-      currentTime <= c.position + c.endTime
-    );
+    const clip = clips.find((c) => {
+      const clipStart = c.position;
+      const clipEnd = c.position + (c.endTime - c.startTime);
+      return currentTime >= clipStart && currentTime <= clipEnd;
+    });
 
     if (clip) {
-      const offset = currentTime - clip.position;
-      if (Math.abs(video.currentTime - offset) > 0.1) {
-        video.currentTime = offset;
+      const offsetInClip = currentTime - clip.position;
+      const actualVideoTime = clip.startTime + offsetInClip;
+      if (Math.abs(video.currentTime - actualVideoTime) > 0.1) {
+        video.currentTime = actualVideoTime;
       }
     }
   }, [currentTime, clips]);
@@ -84,14 +89,17 @@ export default function VideoPreview() {
     const video = videoRef.current;
     if (!video) return;
     
-    const clip = clips.find((c) => 
-      currentTime >= c.position + c.startTime && 
-      currentTime <= c.position + c.endTime
-    );
+    const clip = clips.find((c) => {
+      const clipStart = c.position;
+      const clipEnd = c.position + (c.endTime - c.startTime);
+      return currentTime >= clipStart && currentTime <= clipEnd;
+    });
     
     if (clip) {
-      const offset = video.currentTime;
-      const timelineTime = clip.position + clip.startTime + offset;
+      // Video's currentTime is in the original video's timeline
+      // Convert it back to the timeline position by subtracting startTime
+      const offsetInClip = video.currentTime - clip.startTime;
+      const timelineTime = clip.position + offsetInClip;
       const store = useTimelineStore.getState();
       if (Math.abs(store.currentTime - timelineTime) > 0.1) {
         store.setCurrentTime(timelineTime);
@@ -113,8 +121,8 @@ export default function VideoPreview() {
       const newTime = store.currentTime + 0.1;
       store.setCurrentTime(newTime);
       
-      // Check if we've reached the end of all clips
-      const maxTime = Math.max(...clips.map(c => c.position + c.endTime), 0);
+      // Check if we've reached the end of all clips (accounting for trim)
+      const maxTime = Math.max(...clips.map(c => c.position + (c.endTime - c.startTime)), 0);
       if (newTime >= maxTime) {
         store.setIsPlaying(false);
       }

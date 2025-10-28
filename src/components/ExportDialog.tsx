@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Download, X, AlertCircle } from 'lucide-react';
+import { Clip } from '../store/timelineStore';
 
 interface ExportDialogProps {
   isOpen: boolean;

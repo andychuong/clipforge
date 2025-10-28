@@ -1,8 +1,8 @@
 # ClipForge Memory Bank
 
-**Last Updated:** December 2024  
+**Last Updated:** January 2025  
 **Project:** ClipForge Desktop Video Editor  
-**Status:** Phase 3 Complete - MVP Export + UI Redesign Complete - Split/Merge Features Added
+**Status:** Phase 5 Complete - Master Track System Implemented - Timeline Zoom Improvements - Video Trimming Fixed
 
 ---
 
@@ -33,10 +33,15 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
   - Single store with clear action methods
 
 ### Timeline Architecture
-- **Tracks:** Currently supports 2 tracks (Track 1: Main, Track 2: Overlay)
+- **Master Track (Track 0):** Green-themed output track - final continuous video with no gaps
+- **Source Tracks (Track 1, 2):** Blue-themed staging tracks for arranging clips before adding to master
 - **Clips:** Each clip has position, startTime, endTime, duration, path
-- **Playhead:** Represents current time position in seconds
-- **Zoom:** Adjustable via buttons (currently 0.67x to multiple zoom levels)
+- **Playhead:** Represents current time position in seconds, spans full timeline height
+- **Zoom:** Dynamic timeline extension based on zoom level
+  - At 0.2x: 30-minute timeline view
+  - At 0.5x: 15-minute timeline view
+  - At 1x: 10-minute timeline view
+  - Adaptive marker intervals prevent clutter
 
 ### Media Handling
 - **Import:** Drag & drop from Finder OR file picker button
@@ -48,11 +53,17 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - **Issue:** Timeline needed better scrolling behavior for long videos
 - **Solution:** Implemented single horizontal scrollbar for both ruler and tracks
 - **Zoom Behavior:** Adaptive marker intervals based on zoom level to prevent overlapping labels
-  - Zoom < 0.5x: markers every 30s
-  - Zoom < 1x: markers every 15s  
-  - Zoom < 2x: markers every 10s
-  - Zoom < 5x: markers every 5s
-  - Zoom ≥ 5x: markers every 1s
+  - Zoom < 0.2x: markers every 5 minutes (300s)
+  - Zoom < 0.5x: markers every 2 minutes (120s)
+  - Zoom < 1x: markers every 1 minute (60s)
+  - Zoom < 2x: markers every 30 seconds
+  - Zoom < 5x: markers every 10 seconds
+  - Zoom ≥ 5x: markers every 5 seconds
+- **Timeline Extension:** Timeline extends based on zoom level for better overview
+  - Very zoomed out (0.2x): Shows 30 minutes
+  - Zoomed out (0.5x): Shows 15 minutes
+  - Normal (1x): Shows 10 minutes
+  - Zoomed in (2x+): Shows 3-5 minutes
 
 ---
 
@@ -88,12 +99,19 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - Picture-in-picture
 - Recording controls
 
-### Phase 5: Polish ✅ (In Progress)
+### Phase 5: Polish ✅ (Complete)
 - ✅ Split clip functionality - Implemented
-- ✅ Multiple tracks (already implemented)
-- ✅ Timeline zoom - Implemented
+- ✅ Merge clip functionality - Implemented
+- ✅ Delete clip functionality - Implemented
+- ✅ Master track system - Green-themed output track with no gaps
+- ✅ Source tracks - Blue-themed staging tracks (1, 2)
+- ✅ Clip copying to master track - Original stays in source track
+- ✅ Timeline zoom - Dynamic extension based on zoom level
+- ✅ Video trimming - Fixed playback to respect trim points
+- ✅ Playhead visualization - Full height line through all tracks
 - ✅ Professional UI redesign - Complete
 - ✅ Professional icons (Lucide React) - Complete
+- ✅ Increased track height (100px per track)
 - ⏳ Snap-to-grid - Not implemented
 - ⏳ Keyboard shortcuts - Basic ones work
 
@@ -137,14 +155,18 @@ get_documents_path()      // Get user Documents directory
 ### Store Actions (Zustand)
 ```typescript
 // Available actions in src/store/timelineStore.ts:
-addClip(clip)              // Add clip to timeline
-removeClip(id)             // Remove clip
-updateClip(id, updates)   // Update clip properties
-setCurrentTime(time)      // Set playhead position
-setIsPlaying(bool)        // Set playback state
-splitClip(clipId, time)   // Split clip at specified time
-combineClips(id1, id2)    // Merge two adjacent clips
-setSelectedClips(ids)     // Set selected clip IDs
+addClip(clip)                 // Add clip to timeline (auto-positions at 0:00 for new clips)
+removeClip(id)                 // Remove clip
+updateClip(id, updates)       // Update clip properties
+setCurrentTime(time)          // Set playhead position
+setIsPlaying(bool)            // Set playback state
+splitClip(clipId, time)       // Split clip at specified time
+combineClips(id1, id2)        // Merge two adjacent clips
+setSelectedClips(ids)         // Set selected clip IDs
+moveClip(clipId, pos, track)  // Move/reposition clip on timeline
+setDraggingClipId(id)         // Track currently dragging clip
+getMasterTrackClips()         // Get all clips on master track (track 0)
+ensureMasterTrackContinuity() // Reorder master track clips with no gaps
 ```
 
 ### Timeline Data Structure
@@ -164,6 +186,38 @@ interface Clip {
 ```
 
 ---
+
+## Current Project Structure
+
+```
+clipforge/
+├── .git/                    # Git repository
+├── .gitignore              # Git ignore rules
+├── dev.sh                   # Development script
+├── MEMORY_BANK.md          # Project documentation
+├── README.md               # Project readme
+├── index.html              # Main HTML entry point
+├── package.json            # Node.js dependencies
+├── package-lock.json       # Locked dependencies
+├── postcss.config.js       # PostCSS config
+├── tailwind.config.js      # Tailwind CSS config
+├── tsconfig.json           # TypeScript config
+├── vite.config.ts          # Vite bundler config
+├── dist/                   # Build output (gitignored)
+├── node_modules/           # Dependencies (gitignored)
+├── src/                    # Frontend source code
+│   ├── App.tsx            # Main app component
+│   ├── main.tsx           # Entry point
+│   ├── components/        # React components
+│   ├── hooks/             # Custom hooks
+│   ├── store/             # State management (Zustand)
+│   └── styles/            # CSS styles
+└── src-tauri/              # Backend (Rust)
+    ├── src/               # Rust source code
+    ├── target/            # Build output (gitignored)
+    ├── capabilities/      # Tauri permissions
+    └── icons/             # App icons
+```
 
 ## Known Issues & Solutions
 
@@ -284,12 +338,28 @@ ffmpeg -i INPUT_PATH -ss START_TIME -t DURATION \
 ### Timeline Interaction
 - **Click:** Sets playhead position
 - **Scrub:** Drag to move playhead
-- **Trim:** Drag clip edges to adjust start/end
+- **Trim:** Drag clip edges to adjust start/end (yellow handles)
 - **Zoom:** Buttons adjust pixelsPerSecond (10 * zoomLevel)
+- **Drag Clips:** Click and drag clips to reposition on timeline
+- **Master Track Drop:** Creates a copy of clip on master track, original stays in source
+- **Source Track Drop:** Moves clip to different source track position
+- **Clip Selection:** Click to select, Ctrl/Cmd+Click to multi-select
 
 ---
 
-## Recent Major Updates (December 2024)
+## Recent Major Updates (January 2025)
+
+### Master Track System & Video Trimming (Latest - January 2025)
+- ✅ **Master Track System** - Green-themed output track (track 0) for final video
+- ✅ **Source Tracks** - Blue-themed staging tracks (1, 2) for organizing clips
+- ✅ **Clip Copy Behavior** - Dragging to master track creates a copy, original stays in source
+- ✅ **New Clips Start at 0:00** - All new clips automatically positioned at beginning
+- ✅ **Automatic Continuity** - Master track automatically prevents gaps between clips
+- ✅ **Fixed Video Trimming** - Playback now correctly respects startTime and endTime trim points
+- ✅ **Playhead Visualization** - Red line spans full timeline height through all tracks
+- ✅ **Dynamic Zoom Timeline** - Timeline extends based on zoom level (30 min at 0.2x, etc.)
+- ✅ **Increased Track Heights** - 100px per track for better clip manipulation
+- ✅ **Improved Marker Intervals** - Adaptive spacing prevents clutter at all zoom levels
 
 ### UI Redesign & Professional Icon Pack
 - ✅ **Complete UI redesign** - More professional, video editor-like interface

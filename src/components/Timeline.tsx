@@ -1,15 +1,29 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 
 export default function Timeline() {
-  const { clips, currentTime, zoomLevel, selectedClips, setCurrentTime, addClip, updateClip, setSelectedClips } = useTimelineStore();
+  const { 
+    clips, 
+    currentTime, 
+    zoomLevel, 
+    selectedClips, 
+    draggingClipId,
+    setCurrentTime, 
+    addClip, 
+    updateClip, 
+    setSelectedClips,
+    moveClip,
+    setDraggingClipId,
+    ensureMasterTrackContinuity
+  } = useTimelineStore();
   const [dragOverTrack, setDragOverTrack] = useState<number | null>(null);
   const [trimmingClip, setTrimmingClip] = useState<string | null>(null);
   const [trimHandle, setTrimHandle] = useState<'start' | 'end' | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isDraggingFromLibrary, setIsDraggingFromLibrary] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
-  const trimThrottleRef = useRef<NodeJS.Timeout | null>(null);
+  const [dragStartOffset, setDragStartOffset] = useState({ x: 0, y: 0 });
+  const trimThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Listen for global drag state
   useEffect(() => {
@@ -79,26 +93,55 @@ export default function Timeline() {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+  
+  const formatTimeCompact = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    // For very zoomed out view, show compact format
+    if (seconds >= 3600) {
+      const hrs = Math.floor(seconds / 3600);
+      const minsInHour = Math.floor((seconds % 3600) / 60);
+      return `${hrs}:${minsInHour.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
-  // Calculate timeline width based on content
-  // Always show at least 5 minutes (300 seconds) for a full default view
-  const maxTime = Math.max(...clips.map((c) => c.position + c.endTime), 300);
+  // Calculate timeline width based on content and zoom level
+  // Account for trimmed clips: position + (endTime - startTime)
+  const maxTimeFromClips = Math.max(...clips.map((c) => c.position + (c.endTime - c.startTime)), 0);
+  
+  // When zoomed out, extend the timeline much further for better navigation
+  let minTimelineDuration: number;
+  if (zoomLevel < 0.3) {
+    minTimelineDuration = 1800; // 30 minutes when very zoomed out
+  } else if (zoomLevel < 0.5) {
+    minTimelineDuration = 900; // 15 minutes
+  } else if (zoomLevel < 1) {
+    minTimelineDuration = 600; // 10 minutes
+  } else if (zoomLevel < 2) {
+    minTimelineDuration = 300; // 5 minutes
+  } else {
+    minTimelineDuration = 180; // 3 minutes
+  }
+  
+  const maxTime = Math.max(maxTimeFromClips, minTimelineDuration);
   const timelineContentWidth = Math.max(maxTime * pixelsPerSecond + 100, 2000);
   
-  // Generate time markers based on zoom and available space
+  // Generate time markers based on zoom level with better intervals
   const markers = [];
-  // Use adaptive intervals: more zoom = smaller intervals
   let markerInterval: number;
-  if (zoomLevel < 0.5) {
-    markerInterval = 30; // Every 30 seconds
+  if (zoomLevel < 0.2) {
+    markerInterval = 300; // Every 5 minutes
+  } else if (zoomLevel < 0.5) {
+    markerInterval = 120; // Every 2 minutes
   } else if (zoomLevel < 1) {
-    markerInterval = 15; // Every 15 seconds
+    markerInterval = 60; // Every 1 minute
   } else if (zoomLevel < 2) {
-    markerInterval = 10; // Every 10 seconds
+    markerInterval = 30; // Every 30 seconds
   } else if (zoomLevel < 5) {
-    markerInterval = 5; // Every 5 seconds
+    markerInterval = 10; // Every 10 seconds
   } else {
-    markerInterval = 1; // Every 1 second at high zoom
+    markerInterval = 5; // Every 5 seconds
   }
 
   for (let i = 0; i <= maxTime; i += markerInterval) {
@@ -130,11 +173,11 @@ export default function Timeline() {
       const mediaFile = JSON.parse(data);
       console.log('Parsed media file:', mediaFile);
       
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const position = x / pixelsPerSecond;
+      // For new clips from library, always start at 0:00
+      // Place on source tracks (1, 2), not master track (0)
+      const targetTrack = track === 0 ? 1 : track; // Don't allow direct drops to master track
       
-      console.log('Adding clip at position:', position);
+      console.log('Adding clip at position 0:00 on track:', targetTrack);
       
       addClip({
         name: mediaFile.name,
@@ -143,8 +186,8 @@ export default function Timeline() {
         duration: mediaFile.duration,
         startTime: 0,
         endTime: mediaFile.duration,
-        track,
-        position: Math.max(0, position),
+        track: targetTrack,
+        position: 0, // Always start at 0:00
       });
       
       console.log('Clip added successfully');
@@ -159,7 +202,7 @@ export default function Timeline() {
       {/* Combined scrollable container for ruler and tracks */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden" style={{ display: 'flex', flexDirection: 'column' }}>
         {/* Time Ruler - Fixed to top */}
-        <div className="relative h-8 bg-gray-800 border-b border-gray-700 sticky top-0 z-30 overflow-hidden">
+        <div className="relative h-8 bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
           <div
             className="absolute inset-0 z-10 bg-gray-800"
             onClick={handleTimelineClick}
@@ -172,12 +215,12 @@ export default function Timeline() {
                 style={{ left: `${time * pixelsPerSecond}px` }}
               >
                 <div className="border-l border-gray-600 h-full w-0" />
-                <div className="ml-1 mt-1 bg-gray-800">{formatTime(time)}</div>
+                <div className="ml-1 mt-1 bg-gray-800">{zoomLevel < 0.5 ? formatTimeCompact(time) : formatTime(time)}</div>
               </div>
             ))}
           </div>
 
-          {/* Playhead - in the time ruler */}
+          {/* Playhead indicator - in the time ruler */}
           <div
             className="absolute top-0 pointer-events-none z-20"
             style={{ 
@@ -187,20 +230,13 @@ export default function Timeline() {
             <div 
               className="absolute top-0 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-red-600" 
             />
-            <div 
-              className="absolute top-2 bg-red-500"
-              style={{
-                width: '1px',
-                height: '180px',
-              }}
-            />
           </div>
         </div>
 
         {/* Timeline Tracks */}
         <div 
           className="bg-gray-900 relative"
-          style={{ width: `${timelineContentWidth}px`, minHeight: '150px' }}
+          style={{ width: `${timelineContentWidth}px`, height: '320px' }}
           onClick={handleTimelineClick}
         onDragEnter={(e) => {
           e.preventDefault();
@@ -220,10 +256,6 @@ export default function Timeline() {
           e.preventDefault();
           console.log('>>> DROP ON TIMELINE <<<');
           
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const position = x / pixelsPerSecond;
-          
           let data = e.dataTransfer.getData('application/json');
           if (!data) {
             data = e.dataTransfer.getData('text/plain');
@@ -232,6 +264,7 @@ export default function Timeline() {
           if (data) {
             try {
               const mediaFile = JSON.parse(data);
+              // New clips always start at 0:00 on source track 1
               addClip({
                 name: mediaFile.name,
                 path: mediaFile.path,
@@ -239,10 +272,10 @@ export default function Timeline() {
                 duration: mediaFile.duration,
                 startTime: 0,
                 endTime: mediaFile.duration,
-                track: 1,
-                position: Math.max(0, position),
+                track: 1, // Default to source track 1
+                position: 0, // Always start at 0:00
               });
-              console.log('>>> CLIP ADDED <<<');
+              console.log('>>> CLIP ADDED AT 0:00 <<<');
               setIsDraggingOver(false);
             } catch (err) {
               console.error('Drop error:', err);
@@ -282,11 +315,10 @@ export default function Timeline() {
                 data = e.dataTransfer.getData('text/plain');
               }
               console.log('Overlay data:', data);
-              // Parse and add to track 1 at playhead position
+              // Parse and add to track 1 at 0:00
               try {
                 const mediaFile = JSON.parse(data);
-                // Use playhead (currentTime) for overlay drops since mouse position isn't accurate
-                const position = currentTime;
+                // New clips always start at 0:00
                 addClip({
                   name: mediaFile.name,
                   path: mediaFile.path,
@@ -295,9 +327,9 @@ export default function Timeline() {
                   startTime: 0,
                   endTime: mediaFile.duration,
                   track: 1,
-                  position: Math.max(0, position),
+                  position: 0, // Always start at 0:00
                 });
-                console.log('Added clip via overlay at:', position);
+                console.log('Added clip via overlay at 0:00');
                 setIsDraggingFromLibrary(false);
               } catch (err) {
                 console.error('Overlay drop error:', err);
@@ -316,6 +348,65 @@ export default function Timeline() {
           onMouseDown={handleMouseDown}
         >
           {/* Track Labels and Drop Zones */}
+          {/* Master Track (0) - Output video with no gaps */}
+          <div
+            key="track-master"
+            className={`absolute left-0 right-0 border-b-2 border-green-600 ${
+              dragOverTrack === 0 ? 'bg-green-900/20 border-green-400' : 'bg-green-950/30'
+            } transition-all pointer-events-auto`}
+            style={{
+              top: '10px',
+              height: '100px',
+              minWidth: '100%',
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDragOverTrack(0);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // Allow moving clips to master track
+              if (draggingClipId) {
+                e.dataTransfer.dropEffect = 'move';
+              } else {
+                e.dataTransfer.dropEffect = 'none';
+              }
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setDragOverTrack(null);
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (draggingClipId) {
+                // Copying clip to master track (keeps original in source track)
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left - dragStartOffset.x;
+                const newPosition = Math.max(0, x / pixelsPerSecond);
+                moveClip(draggingClipId, newPosition, 0);
+                setDraggingClipId(null);
+                // Ensure master track has no gaps
+                setTimeout(() => ensureMasterTrackContinuity(), 0);
+              }
+              setDragOverTrack(null);
+              setIsDraggingFromLibrary(false);
+            }}
+          >
+            <div className="absolute left-2 top-2 text-xs font-semibold text-green-400 uppercase tracking-wide pointer-events-none flex items-center gap-1">
+              <span className="text-green-500">★</span> Master Track (Output)
+            </div>
+            {dragOverTrack === 0 && draggingClipId && (
+              <div className="h-full flex items-center justify-center text-green-400 text-sm font-medium pointer-events-none">
+                Drop to add to output
+              </div>
+            )}
+          </div>
+
+          {/* Source Tracks (1, 2) - For staging clips */}
           {[1, 2].map((track) => (
             <div
               key={`track-${track}`}
@@ -323,37 +414,49 @@ export default function Timeline() {
                 dragOverTrack === track ? 'bg-blue-900/20 border-blue-500' : 'bg-gray-900/30'
               } transition-all pointer-events-auto`}
               style={{
-                top: `${20 + (track - 1) * 80}px`,
-                height: '80px',
+                top: `${10 + track * 100}px`,
+                height: '100px',
                 minWidth: '100%',
               }}
               onDragEnter={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Drag entered track', track, 'types:', Array.from(e.dataTransfer.types));
                 setDragOverTrack(track);
               }}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (e.dataTransfer.types.includes('application/json')) {
-                  e.dataTransfer.dropEffect = 'copy';
+                e.dataTransfer.dropEffect = draggingClipId ? 'move' : 'copy';
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverTrack(null);
                 }
-                console.log('Dragging over track', track);
               }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Drop event on track', track);
-                handleDrop(e, track);
+                if (draggingClipId) {
+                  // Moving existing clip within timeline
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left - dragStartOffset.x;
+                  const newPosition = Math.max(0, x / pixelsPerSecond);
+                  moveClip(draggingClipId, newPosition, track);
+                  setDraggingClipId(null);
+                } else {
+                  // New clip from library
+                  handleDrop(e, track);
+                }
+                setDragOverTrack(null);
+                setIsDraggingFromLibrary(false);
               }}
             >
-              <div className="absolute left-2 top-2 text-xs font-semibold text-gray-600 uppercase tracking-wide pointer-events-none">
-                Track {track}
+              <div className="absolute left-2 top-2 text-xs font-semibold text-gray-500 uppercase tracking-wide pointer-events-none">
+                Source Track {track}
               </div>
               {dragOverTrack === track && (
                 <div className="h-full flex items-center justify-center text-blue-400 text-sm font-medium pointer-events-none">
-                  Drop video here
+                  {draggingClipId ? 'Move clip here' : 'Drop video here'}
                 </div>
               )}
             </div>
@@ -364,18 +467,45 @@ export default function Timeline() {
             const clipWidth = (clip.endTime - clip.startTime) * pixelsPerSecond;
             const isTrimming = trimmingClip === clip.id;
             const isSelected = selectedClips.includes(clip.id);
+            const isDragging = draggingClipId === clip.id;
+            const isMasterTrack = clip.track === 0;
+            
+            // Different colors for master track vs source tracks
+            const clipColors = isMasterTrack 
+              ? 'from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 border-green-800'
+              : 'from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 border-blue-800';
             
             return (
               <div
                 key={clip.id}
-                className={`absolute bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 border-2 rounded shadow-lg transition-all ${
-                  isTrimming ? 'border-yellow-400 shadow-yellow-400/50' : 'border-blue-800'
-                } ${isSelected ? 'ring-2 ring-white shadow-white/30' : ''}`}
+                draggable={!isTrimming}
+                className={`absolute bg-gradient-to-r ${clipColors} border-2 rounded shadow-lg transition-all cursor-move ${
+                  isTrimming ? 'border-yellow-400 shadow-yellow-400/50' : ''
+                } ${isSelected ? 'ring-2 ring-white shadow-white/30' : ''} ${
+                  isDragging ? 'opacity-50' : ''
+                }`}
                 style={{
                   left: `${clip.position * pixelsPerSecond}px`,
-                  top: `${20 + (clip.track - 1) * 80 + 20}px`,
+                  top: `${10 + clip.track * 100 + 25}px`,
                   width: `${clipWidth}px`,
-                  height: '50px',
+                  height: '60px',
+                }}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  setDraggingClipId(clip.id);
+                  // Store offset from click point to clip start
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const offsetX = e.clientX - rect.left;
+                  const offsetY = e.clientY - rect.top;
+                  setDragStartOffset({ x: offsetX, y: offsetY });
+                  // Set drag data
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', clip.id);
+                }}
+                onDragEnd={(e) => {
+                  e.stopPropagation();
+                  setDraggingClipId(null);
+                  setDragOverTrack(null);
                 }}
                 onMouseDown={(e) => {
                   e.stopPropagation();
@@ -384,23 +514,26 @@ export default function Timeline() {
                   const x = e.clientX - rect.left;
                   const handleWidth = 10;
                   
-                  // Select clip on click (unless clicking trim handle)
-                  if (x >= handleWidth && x <= clipWidth - handleWidth) {
-                    if (e.ctrlKey || e.metaKey) {
-                      // Multi-select
-                      setSelectedClips(selectedClips.includes(clip.id) 
-                        ? selectedClips.filter(id => id !== clip.id)
-                        : [...selectedClips, clip.id]);
-                    } else {
-                      // Single select
-                      setSelectedClips([clip.id]);
-                    }
-                  } else if (x < handleWidth) {
+                  // Check if clicking trim handles
+                  if (x < handleWidth) {
                     setTrimmingClip(clip.id);
                     setTrimHandle('start');
+                    return;
                   } else if (x > clipWidth - handleWidth) {
                     setTrimmingClip(clip.id);
                     setTrimHandle('end');
+                    return;
+                  }
+                  
+                  // Select clip on click (middle area)
+                  if (e.ctrlKey || e.metaKey) {
+                    // Multi-select
+                    setSelectedClips(selectedClips.includes(clip.id) 
+                      ? selectedClips.filter(id => id !== clip.id)
+                      : [...selectedClips, clip.id]);
+                  } else {
+                    // Single select
+                    setSelectedClips([clip.id]);
                   }
                 }}
                 onMouseMove={(e) => {
@@ -474,10 +607,10 @@ export default function Timeline() {
           
           {/* Playhead line through tracks */}
           <div
-            className="absolute top-0 bottom-0 pointer-events-none"
+            className="absolute inset-y-0 pointer-events-none"
             style={{ 
               left: `${currentTime * pixelsPerSecond}px`,
-              width: '1px',
+              width: '2px',
               background: '#ef4444',
             }}
           />

@@ -45,8 +45,8 @@ function App() {
           {/* Trim Toolbar - Above Timeline */}
           <TrimToolbar />
 
-          {/* Timeline - Taller for better editing */}
-          <div className="h-72 border-t border-gray-700 bg-gray-900 overflow-hidden flex-shrink-0">
+          {/* Timeline - Taller for 3 tracks (master + 2 source) */}
+          <div className="h-96 border-t border-gray-700 bg-gray-900 overflow-hidden flex-shrink-0">
             <Timeline />
           </div>
         </div>
