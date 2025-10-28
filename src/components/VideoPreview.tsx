@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
+import { Play, Pause, SkipBack, Film } from 'lucide-react';
 
 export default function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,32 +22,45 @@ export default function VideoPreview() {
     );
 
     if (clip) {
-      setCurrentClip(clip.path);
       const video = videoRef.current;
-      if (video && video.src !== clip.path) {
+      const src = clip.blobUrl || clip.path;
+      
+      if (video) {
         const offset = currentTime - clip.position;
-        video.src = clip.path;
-        video.currentTime = offset;
+        
+        // Set src if it hasn't been set yet or changed
+        if (!video.src || video.src !== src) {
+          video.src = src;
+          // Wait for video to load before setting time
+          video.addEventListener('loadedmetadata', () => {
+            video.currentTime = offset;
+          }, { once: true });
+        } else if (Math.abs(video.currentTime - offset) > 0.1) {
+          video.currentTime = offset;
+        }
       }
-    } else {
-      setCurrentClip(null);
+      
+      setCurrentClip(src);
     }
+    // Don't set currentClip to null when no clip - keep the last clip to prevent flickering
   }, [clips, currentTime]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    if (isPlaying && currentClip) {
-      video.play().catch(console.error);
-    } else {
+    if (isPlaying && video.src && video.readyState >= 2) {
+      video.play().catch((err) => {
+        console.error('Play error:', err);
+      });
+    } else if (!isPlaying) {
       video.pause();
     }
-  }, [isPlaying, currentClip]);
+  }, [isPlaying]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !currentClip) return;
+    if (!video) return;
 
     const clip = clips.find((c) => 
       currentTime >= c.position + c.startTime && 
@@ -59,7 +73,7 @@ export default function VideoPreview() {
         video.currentTime = offset;
       }
     }
-  }, [currentTime, currentClip, clips]);
+  }, [currentTime, clips]);
 
   const handlePlayPause = () => {
     const newPlayingState = !isPlaying;
@@ -112,7 +126,7 @@ export default function VideoPreview() {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-black rounded-lg overflow-hidden"
+      className="relative w-full h-full bg-black rounded-lg overflow-hidden flex items-center justify-center"
       onDragEnter={(e) => {
         e.preventDefault();
         console.log('Drag entered video preview');
@@ -142,6 +156,7 @@ export default function VideoPreview() {
             addClip({
               name: mediaFile.name,
               path: mediaFile.path,
+              blobUrl: mediaFile.blobUrl,
               duration: mediaFile.duration,
               startTime: 0,
               endTime: mediaFile.duration,
@@ -167,14 +182,13 @@ export default function VideoPreview() {
 
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className="max-w-full max-h-full object-contain"
         controls={false}
         onTimeUpdate={handleTimeUpdate}
         onEnded={() => {
           useTimelineStore.getState().setIsPlaying(false);
         }}
       >
-        {currentClip && <source src={currentClip} />}
       </video>
 
       {/* Playback Controls Overlay */}
@@ -201,23 +215,9 @@ export default function VideoPreview() {
             title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-8 w-8"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-              </svg>
+              <Pause className="h-8 w-8" fill="currentColor" />
             ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-8 w-8 ml-1"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M8 5v14l11-7z" />
-              </svg>
+              <Play className="h-8 w-8 ml-1" fill="currentColor" />
             )}
           </button>
           
@@ -229,20 +229,13 @@ export default function VideoPreview() {
             className="bg-gray-800/80 hover:bg-gray-700/90 text-white rounded-full w-12 h-12 flex items-center justify-center transition-all"
             title="Rewind to Start"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" />
-            </svg>
+            <SkipBack className="h-6 w-6" fill="currentColor" />
           </button>
         </div>
       </div>
 
       {/* Time Display */}
-      <div className="absolute bottom-4 right-4 bg-gray-900/80 px-3 py-1 rounded text-sm">
+      <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded text-sm font-mono">
         {Math.floor(currentTime / 60)}:
         {Math.floor(currentTime % 60)
           .toString()
@@ -250,11 +243,13 @@ export default function VideoPreview() {
       </div>
 
       {clips.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-          <p>No video loaded</p>
+        <div className="absolute inset-0 flex items-center justify-center text-gray-600">
+          <div className="text-center">
+            <Film className="h-16 w-16 mx-auto mb-3 opacity-20" />
+            <p className="text-sm">Import videos to start editing</p>
+          </div>
         </div>
       )}
     </div>
   );
 }
-

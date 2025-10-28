@@ -12,6 +12,7 @@
     "tauri:build": "bash -c 'source \"$HOME/.cargo/env\" && npm run tauri build'"
   },
   "dependencies": {
+    "lucide-react": "^0.548.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zustand": "^4.4.7"
@@ -28,4 +29,3 @@
     "vite": "^5.0.8"
   }
 }
-

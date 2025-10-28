@@ -1,11 +1,14 @@
 import { useState, useCallback } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { useFileDrop } from '../hooks/useFileDrop';
+import { Plus, Trash2, Film } from 'lucide-react';
 
 interface MediaFile {
   name: string;
-  path: string;
+  path: string; // Real file system path for export
+  blobUrl: string; // Blob URL for video preview
   duration: number;
+  originalFile?: File; // Store original file for lazy path generation
 }
 
 export default function MediaLibrary() {
@@ -26,45 +29,48 @@ export default function MediaLibrary() {
 
     for (const file of videoFiles) {
       console.log('Processing:', file.name);
-      const url = URL.createObjectURL(file);
-      
-      // Create video element to get duration
-      const video = document.createElement('video');
-      video.preload = 'metadata';
       
       try {
+        // Create blob URL immediately for fast preview
+        const blobUrl = URL.createObjectURL(file);
+        console.log('Created blob URL:', blobUrl);
+        
+        // Get duration quickly without blocking
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        
         await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 10000);
           video.onloadedmetadata = () => {
             clearTimeout(timeout);
             resolve();
           };
-          video.onerror = () => {
+          video.onerror = (e) => {
             clearTimeout(timeout);
+            console.error('Video error:', e);
             reject(new Error('Failed to load metadata'));
           };
-          video.src = url;
+          video.src = blobUrl;
         });
 
         const duration = video.duration || 0;
         console.log('Duration:', duration);
         
+        // Add to media library immediately with placeholder path
+        // The real path will be generated when needed for export
         const mediaFile: MediaFile = {
           name: file.name,
-          path: url,
+          path: '', // Will be filled when exporting
+          blobUrl: blobUrl,
           duration,
+          originalFile: file, // Store reference for later
         };
 
         setMediaFiles((prev) => [...prev, mediaFile]);
         console.log('Added to media library');
       } catch (error) {
         console.error('Error processing file:', file.name, error);
-        const mediaFile: MediaFile = {
-          name: file.name,
-          path: url,
-          duration: 0,
-        };
-        setMediaFiles((prev) => [...prev, mediaFile]);
+        alert(`Failed to process "${file.name}". Error: ${error}`);
       }
     }
   }, []);
@@ -93,74 +99,93 @@ export default function MediaLibrary() {
 
   return (
     <div
-      className={`h-full p-4 ${
-        isDragging ? 'bg-blue-600/20 border-2 border-blue-500' : ''
+      className={`h-full w-full flex flex-col ${
+        isDragging ? 'bg-blue-600/20' : ''
       }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Media Library</h2>
+      <div className="p-3 border-b border-gray-700 flex-shrink-0">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Media</h2>
         <button
-          onClick={() => {
+          onClick={async () => {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = 'video/*';
             input.multiple = true;
-            input.onchange = async (e: any) => {
-              const files = Array.from(e.target.files) as File[];
-              for (const file of files) {
-                console.log('Processing file:', file.name);
-                const url = URL.createObjectURL(file);
+            
+            const filePromise = new Promise<File[]>((resolve) => {
+              input.onchange = (e: any) => {
+                const files = Array.from(e.target.files) as File[];
+                resolve(files);
+              };
+            });
+            
+            input.click();
+            const files = await filePromise;
+            
+            for (const file of files) {
+              console.log('Processing file:', file.name);
+              
+              try {
+                // Create blob URL immediately for fast preview
+                const blobUrl = URL.createObjectURL(file);
+                
+                // Get duration quickly
                 const video = document.createElement('video');
                 video.preload = 'metadata';
                 
-                try {
-                  const duration = await new Promise<number>((resolve, reject) => {
-                    const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-                    video.onloadedmetadata = () => {
-                      clearTimeout(timeout);
-                      resolve(video.duration);
-                    };
-                    video.onerror = () => {
-                      clearTimeout(timeout);
-                      reject(new Error('Failed to load'));
-                    };
-                    video.src = url;
-                  });
-                  
-                  const mediaFile: MediaFile = { name: file.name, path: url, duration };
-                  setMediaFiles((prev) => [...prev, mediaFile]);
-                  console.log('Added file:', file.name, 'duration:', duration);
-                } catch (error) {
-                  console.error('Error processing file:', file.name, error);
-                  // Add anyway with 0 duration
-                  const mediaFile: MediaFile = { name: file.name, path: url, duration: 0 };
-                  setMediaFiles((prev) => [...prev, mediaFile]);
-                }
+                const duration = await new Promise<number>((resolve, reject) => {
+                  const timeout = setTimeout(() => reject(new Error('Timeout')), 10000);
+                  video.onloadedmetadata = () => {
+                    clearTimeout(timeout);
+                    resolve(video.duration);
+                  };
+                  video.onerror = (e) => {
+                    clearTimeout(timeout);
+                    console.error('Video error:', e);
+                    reject(new Error('Failed to load'));
+                  };
+                  video.src = blobUrl;
+                });
+                
+                const mediaFile: MediaFile = { 
+                  name: file.name, 
+                  path: '', // Will be generated when exporting
+                  blobUrl: blobUrl,
+                  duration,
+                  originalFile: file,
+                };
+                setMediaFiles((prev) => [...prev, mediaFile]);
+                console.log('Added file:', file.name, 'duration:', duration);
+              } catch (error) {
+                console.error('Error processing file:', file.name, error);
+                alert(`Failed to process "${file.name}". Error: ${error}`);
               }
-            };
-            input.click();
+            }
           }}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded"
+          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded flex items-center justify-center gap-2 transition-colors"
         >
-          + Add Files
+          <Plus className="h-4 w-4" />
+          Import Videos
         </button>
       </div>
+      
+      <div className="flex-1 overflow-y-auto">
       {mediaFiles.length === 0 ? (
-        <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center text-gray-400">
-          <p className="mb-2">Drag & drop video files here</p>
-          <p className="text-sm">Supports MP4, MOV, AVI</p>
-          <p className="text-xs mt-2">Or click the "+ Add Files" button above</p>
+        <div className="p-4 text-center text-gray-500">
+          <Film className="h-10 w-10 mx-auto mb-2 opacity-30" />
+          <p className="text-xs">Drop videos here</p>
+          <p className="text-xs opacity-70 mt-1">MP4, MOV, AVI</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="p-2 space-y-1">
           {mediaFiles.map((file, index) => (
             <div
               key={index}
-              className={`bg-gray-700 p-2 rounded hover:bg-gray-600 transition-all ${
+              className={`bg-gray-800 hover:bg-gray-700 rounded transition-all ${
                 draggingItem === file.name ? 'opacity-50' : ''
-              } ${selectedFile === file.name ? 'ring-2 ring-blue-500' : ''}`}
+              } ${selectedFile === file.name ? 'ring-1 ring-blue-500' : ''}`}
               onClick={() => {
                 setSelectedFile(selectedFile === file.name ? null : file.name);
               }}
@@ -172,7 +197,14 @@ export default function MediaLibrary() {
                   setDraggingItem(file.name);
                   
                   // Set drag data - this is critical
-                  e.dataTransfer.setData('application/json', JSON.stringify(file));
+                  // Include both path and blobUrl for the clip
+                  const dragData = {
+                    name: file.name,
+                    path: file.path,
+                    blobUrl: file.blobUrl,
+                    duration: file.duration
+                  };
+                  e.dataTransfer.setData('application/json', JSON.stringify(dragData));
                   e.dataTransfer.setData('text/plain', file.name); // Fallback
                   e.dataTransfer.effectAllowed = 'copy';
                   
@@ -192,77 +224,33 @@ export default function MediaLibrary() {
                   const evt = new Event('dragend', { bubbles: true });
                   window.dispatchEvent(evt);
                 }}
-                className="select-none"
+                className="select-none p-2"
                 style={{ 
                   cursor: 'grab',
                   userSelect: 'none'
                 } as React.CSSProperties}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                <Film className="h-4 w-4 text-gray-500 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{file.name}</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs font-medium truncate">{file.name}</p>
+                  <p className="text-xs text-gray-500">
                     {Math.floor(file.duration / 60)}:
                     {Math.floor(file.duration % 60)
                       .toString()
                       .padStart(2, '0')}
                   </p>
                 </div>
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const store = useTimelineStore.getState();
-                      const track1Clips = store.clips.filter(c => c.track === 1);
-                      const lastClipEnd = track1Clips.length > 0 
-                        ? Math.max(...track1Clips.map(c => c.position + c.endTime))
-                        : 0;
-                      store.addClip({
-                        name: file.name,
-                        path: file.path,
-                        duration: file.duration,
-                        startTime: 0,
-                        endTime: file.duration,
-                        track: 1,
-                        position: lastClipEnd,
-                      });
-                    }}
-                    className="text-blue-400 hover:text-blue-300 px-1 text-xs font-bold border border-blue-400 rounded"
-                    title="Add to Track 1"
-                  >
-                    T1
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const store = useTimelineStore.getState();
-                      const track2Clips = store.clips.filter(c => c.track === 2);
-                      const lastClipEnd = track2Clips.length > 0 
-                        ? Math.max(...track2Clips.map(c => c.position + c.endTime))
-                        : 0;
-                      store.addClip({
-                        name: file.name,
-                        path: file.path,
-                        duration: file.duration,
-                        startTime: 0,
-                        endTime: file.duration,
-                        track: 2,
-                        position: lastClipEnd,
-                      });
-                    }}
-                    className="text-green-400 hover:text-green-300 px-1 text-xs font-bold border border-green-400 rounded"
-                    title="Add to Track 2"
-                  >
-                    T2
-                  </button>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRemoveMedia(file.path);
                     }}
-                    className="text-red-400 hover:text-red-300 px-2"
+                    className="text-gray-500 hover:text-red-400 p-0.5 transition-colors"
+                    title="Remove"
                   >
-                    ✕
+                    <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
               </div>
@@ -271,6 +259,7 @@ export default function MediaLibrary() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
