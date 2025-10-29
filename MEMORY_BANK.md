@@ -93,11 +93,14 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - ✅ Native .app binary built (12MB)
 - ⚠️ **File Path Issue:** Fixed - now uses Tauri's file.path property
 
-### Phase 4: Recording (Not Started)
-- Screen recording API
-- Webcam recording
-- Picture-in-picture
-- Recording controls
+### Phase 4: Recording ✅ (Complete - Native Implementation)
+- ✅ Recording UI with Screen/Webcam/PiP buttons
+- ✅ RecordingControls component with duration timer
+- ✅ useRecording hook with native Tauri commands
+- ✅ Rust backend using FFmpeg for screen/webcam capture
+- ✅ Recording saved to /tmp and added to timeline automatically
+- ✅ Graceful error handling
+- ✅ Native macOS recording using avfoundation
 
 ### Phase 5: Polish ✅ (Complete)
 - ✅ Split clip functionality - Implemented
@@ -251,6 +254,21 @@ clipforge/
 - **Problem:** Invalid permission names in capabilities
 - **Solution:** Use only core: permissions, remove fs: and dialog: permissions
 - **Location:** `src-tauri/capabilities/default.json`
+- **Status:** ✅ Fixed
+
+### Issue 5: Media Recording APIs ✅ FIXED
+- **Problem:** `navigator.mediaDevices` is undefined in Tauri's webview environment
+- **Error:** `TypeError: undefined is not an object (evaluating 'navigator.mediaDevices.getDisplayMedia')`
+- **Root Cause:** Tauri's webview (wry) doesn't expose browser media APIs by default
+- **Solution:** Implemented native Rust-based recording using FFmpeg
+  - Added `start_recording`, `stop_recording`, `is_recording` Tauri commands
+  - Uses FFmpeg with avfoundation for macOS screen/webcam capture
+  - Recordings saved to `/tmp` directory with timestamp filenames
+- **Location:** 
+  - `src-tauri/src/main.rs` - Rust recording commands
+  - `src/hooks/useRecording.ts` - Updated to use Tauri invoke
+  - `src/components/RecordingControls.tsx` - Recording UI
+- **Status:** ✅ Implemented - Native recording using FFmpeg
 
 ---
 

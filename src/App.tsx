@@ -5,6 +5,7 @@ import VideoPreview from './components/VideoPreview';
 import Timeline from './components/Timeline';
 import ExportDialog from './components/ExportDialog';
 import TrimToolbar from './components/TrimToolbar';
+import RecordingControls from './components/RecordingControls';
 import { Download } from 'lucide-react';
 
 function App() {
@@ -27,6 +28,9 @@ function App() {
           Export Video
         </button>
       </div>
+
+      {/* Recording Controls */}
+      <RecordingControls />
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">

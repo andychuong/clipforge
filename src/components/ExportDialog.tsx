@@ -19,12 +19,17 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
 
   if (!isOpen) return null;
 
+  // Filter to only master track clips (track 0) and sort by position
+  const masterClips = clips
+    .filter(clip => clip.track === 0)
+    .sort((a, b) => a.position - b.position);
+
   // We allow empty paths since they'll be generated on-demand during export
   const hasInvalidClips = false; // Always allow export, path will be generated if needed
 
   const handleExport = async () => {
-    if (clips.length === 0) {
-      setError('No clips to export');
+    if (masterClips.length === 0) {
+      setError('No clips on master track to export');
       return;
     }
 
@@ -34,8 +39,9 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
       setError(null);
       progressAccumulator.current = 0;
 
-      // For MVP, export the first clip only
-      const clip = clips[0];
+      // If only one clip, use simple export
+      if (masterClips.length === 1) {
+        const clip = masterClips[0];
       
       // Generate file path if it doesn't exist yet (lazy path generation)
       let inputPath = clip.path;
@@ -156,9 +162,17 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
         alert(`Export complete! Saved to: ${outputPath}`);
         onClose();
       } catch (err: any) {
+        clearInterval(progressInterval);
         setProgress(0);
         setError(err.toString());
       }
+      return;
+    }
+    
+    // TODO: Multi-clip concatenation
+    // For now, show error if multiple clips
+    setError('Multiple clip export not yet implemented. Please export clips one at a time.');
+    setIsExporting(false);
     } catch (err: any) {
       console.error('Export error:', err);
       setError(err.message || 'Export failed');
@@ -193,21 +207,24 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
 
         <div className="mb-4">
           <p className="text-gray-300 mb-2">
-            Exporting {clips.length} clip{clips.length > 1 ? 's' : ''}
+            Exporting {masterClips.length} clip{masterClips.length > 1 ? 's' : ''} from Master Track
           </p>
-          {clips.length > 0 && (
-            <div className="text-sm space-y-2">
-              {clips.map((clip, idx) => (
+          {masterClips.length > 0 && (
+            <div className="text-sm space-y-2 max-h-40 overflow-y-auto">
+              {masterClips.map((clip, idx) => (
                 <div key={idx} className="p-2 rounded bg-gray-700/30">
                   <p className="text-gray-400">
-                    Clip: {clip.name}
+                    {idx + 1}. {clip.name}
                   </p>
-                  <p className="text-gray-400">
-                    Duration: {Math.floor(clip.endTime - clip.startTime)}s
+                  <p className="text-gray-500 text-xs">
+                    {Math.floor(clip.endTime - clip.startTime)}s @ {Math.floor(clip.position)}s
                   </p>
                 </div>
               ))}
             </div>
+          )}
+          {masterClips.length === 0 && (
+            <p className="text-yellow-400 text-sm">Add clips to Master Track to export</p>
           )}
         </div>
 
@@ -233,12 +250,12 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
           </button>
           <button
             onClick={handleExport}
-            disabled={isExporting || clips.length === 0 || hasInvalidClips}
+            disabled={isExporting || masterClips.length === 0 || hasInvalidClips}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50 flex items-center gap-2"
             title={hasInvalidClips ? 'Some clips have invalid file paths and cannot be exported' : ''}
           >
             <Download className="h-4 w-4" />
-            {isExporting ? 'Exporting...' : 'Export'}
+            {isExporting ? 'Exporting...' : 'Export Master Track'}
           </button>
         </div>
       </div>

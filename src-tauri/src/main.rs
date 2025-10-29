@@ -3,12 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::sync::{Arc, Mutex};
+use std::sync::OnceLock;
+use std::process::Child;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ExportProgress {
-    progress: f64,
-    stage: String,
-}
+static RECORDING_PROCESS: OnceLock<Arc<Mutex<Option<Child>>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ExportParams {
@@ -108,9 +107,102 @@ async fn check_ffmpeg() -> Result<bool, String> {
     Ok(output.status.success())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct StartRecordingParams {
+    output_path: String,
+    recording_type: String, // "screen", "webcam", or "both"
+}
+
+// Start native screen recording using FFmpeg
+#[tauri::command]
+async fn start_recording(params: StartRecordingParams) -> Result<String, String> {
+    use std::process::Command;
+    
+    let recording = RECORDING_PROCESS.get_or_init(|| Arc::new(Mutex::new(None)));
+    let mut process_guard = recording.lock().map_err(|e| format!("Lock error: {}", e))?;
+    
+    // If already recording, return error
+    if process_guard.is_some() {
+        return Err("Already recording".to_string());
+    }
+    
+    // Build ffmpeg command based on recording type
+    let command_str = match params.recording_type.as_str() {
+        "screen" => format!(
+            "ffmpeg -f avfoundation -framerate 30 -video_size 1920x1080 -i \"1:0\" -pix_fmt yuv420p -c:v libx264 -preset ultrafast -crf 28 -c:a aac -b:a 128k \"{}\"",
+            params.output_path
+        ),
+        "webcam" => format!(
+            "ffmpeg -f avfoundation -framerate 30 -video_size 1280x720 -i \"0:0\" -pix_fmt yuv420p -c:v libx264 -preset ultrafast -crf 28 -c:a aac -b:a 128k \"{}\"",
+            params.output_path
+        ),
+        _ => return Err("Invalid recording type".to_string()),
+    };
+    
+    println!("Starting recording: {}", command_str);
+    
+    // Start the ffmpeg process
+    let child = Command::new("sh")
+        .arg("-c")
+        .arg(&command_str)
+        .spawn()
+        .map_err(|e| format!("Failed to start ffmpeg: {}", e))?;
+    
+    *process_guard = Some(child);
+    
+    Ok(format!("Recording started to: {}", params.output_path))
+}
+
+// Stop the current recording
+#[tauri::command]
+async fn stop_recording() -> Result<String, String> {
+    let recording = RECORDING_PROCESS.get_or_init(|| Arc::new(Mutex::new(None)));
+    let mut process_guard = recording.lock().map_err(|e| format!("Lock error: {}", e))?;
+    
+    match process_guard.take() {
+        Some(mut child) => {
+            // Send SIGINT (Ctrl+C) to ffmpeg to stop recording gracefully
+            let pid = child.id();
+            
+            // Use kill command on Unix systems (macOS/Linux)
+            #[cfg(unix)]
+            {
+                use std::process::Command;
+                Command::new("kill")
+                    .arg("-INT")
+                    .arg(&pid.to_string())
+                    .output()
+                    .ok();
+            }
+            
+            // Wait for the process to finish
+            let _ = child.wait();
+            
+            Ok("Recording stopped".to_string())
+        }
+        None => Err("No active recording".to_string()),
+    }
+}
+
+// Check recording status
+#[tauri::command]
+async fn is_recording() -> Result<bool, String> {
+    let recording = RECORDING_PROCESS.get_or_init(|| Arc::new(Mutex::new(None)));
+    let process_guard = recording.lock().map_err(|e| format!("Lock error: {}", e))?;
+    Ok(process_guard.is_some())
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![process_file, export_video, check_ffmpeg, get_documents_path])
+        .invoke_handler(tauri::generate_handler![
+            process_file, 
+            export_video, 
+            check_ffmpeg, 
+            get_documents_path,
+            start_recording,
+            stop_recording,
+            is_recording
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
