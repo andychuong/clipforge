@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -21,6 +21,8 @@ export function useRecording() {
   });
 
   const addClip = useTimelineStore(state => state.addClip);
+  const getNextAvailableTrack = useTimelineStore(state => state.getNextAvailableTrack);
+  const recordingTypeRef = useRef<'screen' | 'webcam' | null>(null);
 
   const startScreenRecording = useCallback(async () => {
     try {
@@ -53,6 +55,8 @@ export function useRecording() {
         }));
       }, 1000);
 
+      recordingTypeRef.current = 'screen';
+      
       setRecordingState({
         isRecording: true,
         recordingType: 'screen',
@@ -101,6 +105,8 @@ export function useRecording() {
         }));
       }, 1000);
 
+      recordingTypeRef.current = 'webcam';
+      
       setRecordingState({
         isRecording: true,
         recordingType: 'webcam',
@@ -199,16 +205,23 @@ export function useRecording() {
     }
 
     try {
-      // Create a file URL for the recording
-      const fileUrl = `file://${currentRecordingPath}`;
+      // Read the file bytes using Tauri command
+      const fileData = await invoke<number[]>('read_file_bytes', { path: currentRecordingPath });
+      
+      // Convert to Uint8Array
+      const uint8Array = new Uint8Array(fileData);
+      
+      // Create a blob from the file data
+      const blob = new Blob([uint8Array], { type: 'video/mp4' });
+      const blobUrl = URL.createObjectURL(blob);
       
       // Get video duration (use a temporary video element)
       const video = document.createElement('video');
-      video.src = fileUrl;
+      video.src = blobUrl;
       
       // Wait a bit for the video to load metadata
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
+        const timeout = setTimeout(() => reject(new Error('Timeout')), 10000);
         video.onloadedmetadata = () => {
           clearTimeout(timeout);
           resolve(null);
@@ -219,21 +232,26 @@ export function useRecording() {
         };
       });
 
-      const duration = video.duration;
+      const duration = video.duration || 0;
 
-      // Add to timeline
+      // Add to timeline on next available track
+      const track = getNextAvailableTrack();
+      const recordingType = recordingTypeRef.current;
+      
       addClip({
         name: `Recording ${new Date().toLocaleTimeString()}`,
         path: currentRecordingPath,
-        blobUrl: fileUrl, // Use file URL for local files
+        blobUrl: blobUrl,
         duration: duration,
         startTime: 0,
         endTime: duration,
-        track: 1, // Add to track 1 by default
+        track: track, // Use next available track
         position: 0,
+        recordingType: recordingType || undefined,
       });
 
-      console.log('Recording saved to timeline:', currentRecordingPath);
+      console.log('Recording saved to timeline on track', track, ':', currentRecordingPath);
+      recordingTypeRef.current = null;
     } catch (error) {
       console.error('Error saving recording:', error);
     } finally {

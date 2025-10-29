@@ -127,9 +127,10 @@ async fn start_recording(params: StartRecordingParams) -> Result<String, String>
     }
     
     // Build ffmpeg command based on recording type
+    // Device list: [0] MacBook Pro Camera, [1] iPhone Camera, [2-3] Desk View Cameras, [4] Capture screen 0, [5] Capture screen 1
     let command_str = match params.recording_type.as_str() {
         "screen" => format!(
-            "ffmpeg -f avfoundation -framerate 30 -video_size 1920x1080 -i \"1:0\" -pix_fmt yuv420p -c:v libx264 -preset ultrafast -crf 28 -c:a aac -b:a 128k \"{}\"",
+            "ffmpeg -f avfoundation -framerate 30 -video_size 1920x1080 -i \"4\" -pix_fmt yuv420p -c:v libx264 -preset ultrafast -crf 28 \"{}\"",
             params.output_path
         ),
         "webcam" => format!(
@@ -192,6 +193,12 @@ async fn is_recording() -> Result<bool, String> {
     Ok(process_guard.is_some())
 }
 
+// Read file content for blob creation
+#[tauri::command]
+async fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+    fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -201,7 +208,8 @@ fn main() {
             get_documents_path,
             start_recording,
             stop_recording,
-            is_recording
+            is_recording,
+            read_file_bytes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,7 @@ export interface Clip {
   track: number;
   position: number; // position on timeline in seconds
   fileSize?: number; // File size in bytes (optional, for export estimation)
+  recordingType?: 'screen' | 'webcam'; // Type of recording if it's a recording
 }
 
 interface TimelineState {
@@ -20,6 +21,8 @@ interface TimelineState {
   isPlaying: boolean;
   selectedClips: string[];
   draggingClipId: string | null;
+  numSourceTracks: number;
+  preferredTrack: number | null; // Track to prioritize when finding clip
   
   addClip: (clip: Omit<Clip, 'id'>) => void;
   removeClip: (id: string) => void;
@@ -35,6 +38,10 @@ interface TimelineState {
   setDraggingClipId: (id: string | null) => void;
   getMasterTrackClips: () => Clip[];
   ensureMasterTrackContinuity: () => void;
+  getNextAvailableTrack: () => number;
+  ensureTrackExists: (trackNumber: number) => void;
+  getTrackLabel: (trackNumber: number) => string;
+  setPreferredTrack: (track: number | null) => void;
 }
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
@@ -44,6 +51,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   isPlaying: false,
   selectedClips: [],
   draggingClipId: null,
+  numSourceTracks: 2, // Start with 2 source tracks
+  preferredTrack: null, // No preferred track by default
 
   addClip: (clip) =>
     set((state) => {
@@ -140,20 +149,36 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
       // Only combine if same track and adjacent
       if (clip1.track !== clip2.track) return state;
-      if (Math.abs(clip1.position + clip1.endTime - clip1.startTime - clip2.position) > 0.1) {
+      const clip1Duration = clip1.endTime - clip1.startTime;
+      if (Math.abs(clip1.position + clip1Duration - clip2.position) > 0.1) {
         return state;
       }
 
-      // Create combined clip
+      // Create combined clip - use clip1's path/blobUrl, extend endTime
+      // Calculate total duration: clip1's trimmed duration + clip2's trimmed duration
+      const clip2Duration = clip2.endTime - clip2.startTime;
       const combinedClip: Clip = {
         ...clip1,
-        endTime: clip1.endTime + (clip2.endTime - clip2.startTime),
+        // Keep clip1's startTime, extend endTime by clip2's duration
+        endTime: clip1.endTime + clip2Duration,
+        // Position stays at clip1's position
+        position: clip1.position,
       };
 
       const newClips = state.clips.filter((c) => c.id !== clipId1 && c.id !== clipId2);
       newClips.push(combinedClip);
 
-      return { clips: newClips };
+      const result = { clips: newClips };
+      
+      // If merging on master track, ensure continuity after merge
+      if (clip1.track === 0) {
+        // Use setTimeout to ensure state is updated first
+        setTimeout(() => {
+          get().ensureMasterTrackContinuity();
+        }, 0);
+      }
+
+      return result;
     }),
 
   setSelectedClips: (clips) => set({ selectedClips: clips }),
@@ -209,5 +234,59 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
       return { clips: updatedClips };
     }),
+
+  getNextAvailableTrack: () => {
+    const state = get();
+    // Find the highest used track number (excluding master track 0)
+    const usedTracks = state.clips
+      .filter(clip => clip.track > 0)
+      .map(clip => clip.track);
+    
+    if (usedTracks.length === 0) return 1;
+    
+    // Find first unused track or return next track number
+    for (let i = 1; i <= state.numSourceTracks; i++) {
+      if (!usedTracks.includes(i)) return i;
+    }
+    
+    // All tracks used, create a new one
+    const newTrackNumber = state.numSourceTracks + 1;
+    set({ numSourceTracks: newTrackNumber });
+    return newTrackNumber;
+  },
+
+  ensureTrackExists: (trackNumber) => {
+    const state = get();
+    if (trackNumber > state.numSourceTracks) {
+      set({ numSourceTracks: trackNumber });
+    }
+  },
+
+  getTrackLabel: (trackNumber) => {
+    const state = get();
+    // Find clips on this track
+    const trackClips = state.clips.filter(clip => clip.track === trackNumber);
+    
+    if (trackClips.length === 0) {
+      return `Source Track ${trackNumber}`;
+    }
+    
+    // Check if all clips are screen recordings
+    const allScreenRecordings = trackClips.every(clip => clip.recordingType === 'screen');
+    if (allScreenRecordings) {
+      return `Screen Recording ${trackNumber}`;
+    }
+    
+    // Check if all clips are webcam recordings
+    const allWebcamRecordings = trackClips.every(clip => clip.recordingType === 'webcam');
+    if (allWebcamRecordings) {
+      return `Camera Recording ${trackNumber}`;
+    }
+    
+    // Mixed or no recording type
+    return `Source Track ${trackNumber}`;
+  },
+
+  setPreferredTrack: (track) => set({ preferredTrack: track }),
 }));
 

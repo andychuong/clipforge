@@ -5,7 +5,7 @@ import { Play, Pause, SkipBack, Film } from 'lucide-react';
 export default function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { clips, currentTime, isPlaying, addClip } = useTimelineStore();
+  const { clips, currentTime, isPlaying, addClip, preferredTrack } = useTimelineStore();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [, setCurrentClip] = useState<string | null>(null); // Unused but needed for state management
 
@@ -16,15 +16,40 @@ export default function VideoPreview() {
       return;
     }
 
-    const clip = clips.find((c) => {
-      const clipStart = c.position;
-      const clipEnd = c.position + (c.endTime - c.startTime);
-      return currentTime >= clipStart && currentTime <= clipEnd;
-    });
+    // Priority: preferred track -> master track -> any clip
+    let clip = null;
+    
+    // First, check if there's a preferred track
+    if (preferredTrack !== null) {
+      clip = clips.find((c) => {
+        const clipStart = c.position;
+        const clipEnd = c.position + (c.endTime - c.startTime);
+        return c.track === preferredTrack && currentTime >= clipStart && currentTime <= clipEnd;
+      });
+    }
+    
+    // Second, prioritize master track (track 0) if no preferred track clip found
+    if (!clip) {
+      clip = clips.find((c) => {
+        const clipStart = c.position;
+        const clipEnd = c.position + (c.endTime - c.startTime);
+        return c.track === 0 && currentTime >= clipStart && currentTime <= clipEnd;
+      });
+    }
+    
+    // Finally, find any clip if no master track clip
+    if (!clip) {
+      clip = clips.find((c) => {
+        const clipStart = c.position;
+        const clipEnd = c.position + (c.endTime - c.startTime);
+        return currentTime >= clipStart && currentTime <= clipEnd;
+      });
+    }
 
     if (clip) {
       const video = videoRef.current;
       const src = clip.blobUrl || clip.path;
+      const wasPlaying = isPlaying;
       
       if (video) {
         // Calculate the offset within the clip, then add the startTime trim
@@ -33,10 +58,43 @@ export default function VideoPreview() {
         
         // Set src if it hasn't been set yet or changed
         if (!video.src || video.src !== src) {
+          const previousSrc = video.src;
+          const shouldContinuePlaying = wasPlaying && previousSrc !== src;
+          
+          // Pause first to avoid abort errors
+          if (previousSrc) {
+            video.pause();
+          }
+          
           video.src = src;
-          // Wait for video to load before setting time
-          video.addEventListener('loadedmetadata', () => {
+          
+          // Wait for video to be ready before setting time and playing
+          const handleCanPlay = () => {
             video.currentTime = actualVideoTime;
+            
+            // Wait a bit for time to be set, then play if needed
+            if (shouldContinuePlaying) {
+              // Use a small delay to ensure currentTime is set
+              setTimeout(() => {
+                if (video.readyState >= 2) {
+                  video.play().catch((err) => {
+                    // Ignore abort errors - they happen when switching sources
+                    if (err.name !== 'AbortError') {
+                      console.error('Play error after clip transition:', err);
+                    }
+                  });
+                }
+              }, 50);
+            }
+          };
+          
+          video.addEventListener('loadedmetadata', () => {
+            // Also wait for canplay to ensure video is ready
+            if (video.readyState >= 2) {
+              handleCanPlay();
+            } else {
+              video.addEventListener('canplay', handleCanPlay, { once: true });
+            }
           }, { once: true });
         } else if (Math.abs(video.currentTime - actualVideoTime) > 0.1) {
           video.currentTime = actualVideoTime;
@@ -46,7 +104,7 @@ export default function VideoPreview() {
       setCurrentClip(src);
     }
     // Don't set currentClip to null when no clip - keep the last clip to prevent flickering
-  }, [clips, currentTime]);
+  }, [clips, currentTime, preferredTrack, isPlaying]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -89,19 +147,54 @@ export default function VideoPreview() {
     const video = videoRef.current;
     if (!video) return;
     
-    const clip = clips.find((c) => {
+    const store = useTimelineStore.getState();
+    const currentClips = store.clips;
+    const storeCurrentTime = store.currentTime;
+    
+    const clip = currentClips.find((c) => {
       const clipStart = c.position;
       const clipEnd = c.position + (c.endTime - c.startTime);
-      return currentTime >= clipStart && currentTime <= clipEnd;
+      return storeCurrentTime >= clipStart && storeCurrentTime <= clipEnd;
     });
     
     if (clip) {
+      // Check if we've reached the end of this clip's trimmed segment
+      const clipEndTime = clip.endTime;
+      const clipTimelineEnd = clip.position + (clip.endTime - clip.startTime);
+      
+      // If video has reached the end of the clip segment OR timeline position, transition to next clip
+      if (video.currentTime >= clipEndTime - 0.05 || storeCurrentTime >= clipTimelineEnd - 0.05) {
+        // Find the next clip on the same track
+        const nextClip = currentClips
+          .filter((c) => c.track === clip.track)
+          .sort((a, b) => a.position - b.position)
+          .find((c) => c.position > clip.position);
+        
+        if (nextClip) {
+          // Advance to the start of the next clip (at its startTime, not position)
+          const nextTimelineTime = nextClip.position;
+          // Only update if we're not already there or close to it
+          if (Math.abs(storeCurrentTime - nextTimelineTime) > 0.1) {
+            store.setCurrentTime(nextTimelineTime);
+          }
+          return; // Exit early, don't update currentTime from video
+        } else {
+          // No more clips, pause at the end
+          if (video.currentTime >= clipEndTime || storeCurrentTime >= clipTimelineEnd) {
+            store.setIsPlaying(false);
+            return;
+          }
+        }
+      }
+      
       // Video's currentTime is in the original video's timeline
       // Convert it back to the timeline position by subtracting startTime
       const offsetInClip = video.currentTime - clip.startTime;
       const timelineTime = clip.position + offsetInClip;
-      const store = useTimelineStore.getState();
-      if (Math.abs(store.currentTime - timelineTime) > 0.1) {
+      
+      // Only update if we're moving forward or if there's a significant difference
+      // This prevents looping back
+      if (timelineTime > storeCurrentTime - 0.05 && Math.abs(storeCurrentTime - timelineTime) > 0.1) {
         store.setCurrentTime(timelineTime);
       }
     }
@@ -118,18 +211,53 @@ export default function VideoPreview() {
     
     const interval = setInterval(() => {
       const store = useTimelineStore.getState();
-      const newTime = store.currentTime + 0.1;
-      store.setCurrentTime(newTime);
+      const currentTime = store.currentTime;
+      const currentClips = store.clips; // Get latest clips from store
       
-      // Check if we've reached the end of all clips (accounting for trim)
-      const maxTime = Math.max(...clips.map(c => c.position + (c.endTime - c.startTime)), 0);
-      if (newTime >= maxTime) {
-        store.setIsPlaying(false);
+      // Find current clip
+      const currentClip = currentClips.find((c) => {
+        const clipStart = c.position;
+        const clipEnd = c.position + (c.endTime - c.startTime);
+        return currentTime >= clipStart && currentTime <= clipEnd;
+      });
+      
+      if (currentClip) {
+        const clipEnd = currentClip.position + (currentClip.endTime - currentClip.startTime);
+        
+        // Check if we've reached the end of the current clip
+        if (currentTime >= clipEnd - 0.1) {
+          // Find the next clip on the same track
+          const nextClip = currentClips
+            .filter((c) => c.track === currentClip.track)
+            .sort((a, b) => a.position - b.position)
+            .find((c) => c.position > currentClip.position);
+          
+          if (nextClip) {
+            // Advance to the start of the next clip
+            store.setCurrentTime(nextClip.position);
+          } else {
+            // No more clips on this track, stop playback
+            store.setIsPlaying(false);
+          }
+        } else {
+          // Continue advancing normally
+          const newTime = currentTime + 0.1;
+          store.setCurrentTime(newTime);
+        }
+      } else {
+        // No current clip, check if we've reached the end of all clips
+        const maxTime = Math.max(...currentClips.map(c => c.position + (c.endTime - c.startTime)), 0);
+        const newTime = currentTime + 0.1;
+        if (newTime >= maxTime) {
+          store.setIsPlaying(false);
+        } else {
+          store.setCurrentTime(newTime);
+        }
       }
     }, 100);
     
     return () => clearInterval(interval);
-  }, [isPlaying, clips]);
+  }, [isPlaying]);
 
   return (
     <div
@@ -158,24 +286,34 @@ export default function VideoPreview() {
           data = e.dataTransfer.getData('text/plain');
         }
         
-        if (data) {
+        // Only try to parse if we have valid JSON data
+        if (data && data.trim().startsWith('{')) {
           try {
             const mediaFile = JSON.parse(data);
-            addClip({
-              name: mediaFile.name,
-              path: mediaFile.path,
-              blobUrl: mediaFile.blobUrl,
-              duration: mediaFile.duration,
-              startTime: 0,
-              endTime: mediaFile.duration,
-              track: 1,
-              position: 0,
-            });
-            console.log('Clip added to timeline from video preview drop');
-            setIsDraggingOver(false);
+            
+            // Validate that mediaFile has required properties
+            if (mediaFile && typeof mediaFile === 'object' && mediaFile.name && mediaFile.path) {
+              addClip({
+                name: mediaFile.name,
+                path: mediaFile.path,
+                blobUrl: mediaFile.blobUrl,
+                duration: mediaFile.duration,
+                startTime: 0,
+                endTime: mediaFile.duration,
+                track: 1,
+                position: 0,
+              });
+              console.log('Clip added to timeline from video preview drop');
+              setIsDraggingOver(false);
+            } else {
+              console.warn('Invalid media file data:', mediaFile);
+            }
           } catch (err) {
             console.error('Video preview drop error:', err);
+            console.error('Data that failed to parse:', data);
           }
+        } else {
+          console.log('No valid JSON data in drop, ignoring');
         }
       }}
     >
@@ -194,7 +332,32 @@ export default function VideoPreview() {
         controls={false}
         onTimeUpdate={handleTimeUpdate}
         onEnded={() => {
-          useTimelineStore.getState().setIsPlaying(false);
+          const store = useTimelineStore.getState();
+          const currentClips = store.clips; // Get latest clips from store
+          const currentClip = currentClips.find((c) => {
+            const clipStart = c.position;
+            const clipEnd = c.position + (c.endTime - c.startTime);
+            return store.currentTime >= clipStart && store.currentTime <= clipEnd;
+          });
+          
+          if (currentClip) {
+            // Find the next clip on the same track
+            const nextClip = currentClips
+              .filter((c) => c.track === currentClip.track)
+              .sort((a, b) => a.position - b.position)
+              .find((c) => c.position > currentClip.position);
+            
+            if (nextClip) {
+              // Advance to the start of the next clip
+              store.setCurrentTime(nextClip.position);
+              // Don't pause - let playback continue with next clip
+              // The video will switch to next clip automatically via useEffect
+              return;
+            }
+          }
+          
+          // Only pause if there's no next clip
+          store.setIsPlaying(false);
         }}
       >
       </video>

@@ -2,7 +2,7 @@
 
 **Last Updated:** January 2025  
 **Project:** ClipForge Desktop Video Editor  
-**Status:** Phase 5 Complete - Master Track System Implemented - Timeline Zoom Improvements - Video Trimming Fixed
+**Status:** Phase 5+ Complete - Playback Continuity - Track Selection - UI Refinements
 
 ---
 
@@ -34,14 +34,18 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 
 ### Timeline Architecture
 - **Master Track (Track 0):** Green-themed output track - final continuous video with no gaps
-- **Source Tracks (Track 1, 2):** Blue-themed staging tracks for arranging clips before adding to master
-- **Clips:** Each clip has position, startTime, endTime, duration, path
+- **Source Tracks (Dynamic):** Blue-themed staging tracks that scale infinitely
+  - Start with 2 tracks by default
+  - New tracks created automatically when dragging videos below existing tracks
+  - Each track has smart labels: "Source Track N", "Screen Recording N", or "Camera Recording N"
+- **Clips:** Each clip has position, startTime, endTime, duration, path, recordingType (optional)
 - **Playhead:** Represents current time position in seconds, spans full timeline height
 - **Zoom:** Dynamic timeline extension based on zoom level
   - At 0.2x: 30-minute timeline view
   - At 0.5x: 15-minute timeline view
   - At 1x: 10-minute timeline view
   - Adaptive marker intervals prevent clutter
+- **Vertical Scrolling:** Timeline scrolls vertically as tracks are added, with new track drop zone visible
 
 ### Media Handling
 - **Import:** Drag & drop from Finder OR file picker button
@@ -101,6 +105,8 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - ✅ Recording saved to /tmp and added to timeline automatically
 - ✅ Graceful error handling
 - ✅ Native macOS recording using avfoundation
+- ✅ Correct device mapping (device 4 for screen, device 0 for webcam)
+- ✅ File reading via read_file_bytes for blob URL creation
 
 ### Phase 5: Polish ✅ (Complete)
 - ✅ Split clip functionality - Implemented
@@ -114,7 +120,7 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - ✅ Playhead visualization - Full height line through all tracks
 - ✅ Professional UI redesign - Complete
 - ✅ Professional icons (Lucide React) - Complete
-- ✅ Increased track height (100px per track)
+- ✅ Optimized track height (65px per track, reduced for compact timeline)
 - ⏳ Snap-to-grid - Not implemented
 - ⏳ Keyboard shortcuts - Basic ones work
 
@@ -150,9 +156,13 @@ src-tauri/
 ```rust
 // Available commands in src-tauri/src/main.rs:
 export_video(params)       // Trim and export clip to MP4
-process_file(params)      // Save blob data to temp file, return path
-check_ffmpeg()            // Verify FFmpeg installation
-get_documents_path()      // Get user Documents directory
+process_file(params)       // Save blob data to temp file, return path
+check_ffmpeg()             // Verify FFmpeg installation
+get_documents_path()       // Get user Documents directory
+start_recording(params)    // Start screen/webcam recording with FFmpeg
+stop_recording()           // Stop current recording and save file
+is_recording()             // Check if recording is currently active
+read_file_bytes(path)      // Read file content as bytes for blob creation
 ```
 
 ### Store Actions (Zustand)
@@ -170,6 +180,10 @@ moveClip(clipId, pos, track)  // Move/reposition clip on timeline
 setDraggingClipId(id)         // Track currently dragging clip
 getMasterTrackClips()         // Get all clips on master track (track 0)
 ensureMasterTrackContinuity() // Reorder master track clips with no gaps
+getNextAvailableTrack()       // Find next available empty track or create new one
+ensureTrackExists(num)        // Ensure track exists by expanding if needed
+getTrackLabel(num)             // Get smart track label based on clip types (Screen/Camera Recording)
+setPreferredTrack(track)      // Set preferred track for preview and split operations (null for auto)
 ```
 
 ### Timeline Data Structure
@@ -182,9 +196,10 @@ interface Clip {
   duration: number;        // Total duration in seconds
   startTime: number;       // Trim start (seconds)
   endTime: number;         // Trim end (seconds)
-  track: number;           // Timeline track (1 or 2)
+  track: number;           // Timeline track (0 = master, 1+ = source tracks)
   position: number;         // Timeline position in seconds
   fileSize?: number;       // File size in bytes (for export estimation)
+  recordingType?: 'screen' | 'webcam'; // Type of recording if it's a recording
 }
 ```
 
@@ -261,14 +276,38 @@ clipforge/
 - **Error:** `TypeError: undefined is not an object (evaluating 'navigator.mediaDevices.getDisplayMedia')`
 - **Root Cause:** Tauri's webview (wry) doesn't expose browser media APIs by default
 - **Solution:** Implemented native Rust-based recording using FFmpeg
-  - Added `start_recording`, `stop_recording`, `is_recording` Tauri commands
+  - Added `start_recording`, `stop_recording`, `is_recording`, `read_file_bytes` Tauri commands
   - Uses FFmpeg with avfoundation for macOS screen/webcam capture
   - Recordings saved to `/tmp` directory with timestamp filenames
+  - Device mapping: [0] MacBook Camera (webcam), [4] Capture screen 0 (screen recording)
+  - Screen recording uses device 4, webcam uses device 0
+  - Recorded files read via `read_file_bytes` and converted to blob URLs for timeline
 - **Location:** 
-  - `src-tauri/src/main.rs` - Rust recording commands
-  - `src/hooks/useRecording.ts` - Updated to use Tauri invoke
+  - `src-tauri/src/main.rs` - Rust recording commands with device configuration
+  - `src/hooks/useRecording.ts` - Updated to use Tauri invoke, handles file reading
   - `src/components/RecordingControls.tsx` - Recording UI
-- **Status:** ✅ Implemented - Native recording using FFmpeg
+- **Status:** ✅ Implemented - Native recording using FFmpeg with correct device mapping
+
+### Issue 6: Recording Not Starting ⚠️ DEBUGGING
+- **Problem:** User clicks record button but nothing happens - recording doesn't start
+- **Potential Causes:**
+  1. **macOS Permissions:** Screen recording and microphone permissions not granted
+     - System Settings > Privacy & Security > Screen Recording
+     - System Settings > Privacy & Security > Microphone
+  2. **FFmpeg Not Found:** System doesn't have FFmpeg installed or not in PATH
+  3. **Device Mapping Issue:** FFmpeg device indices may have changed
+     - Expected: Device 4 for screen, Device 0 for webcam
+     - May need to run `ffmpeg -f avfoundation -list_devices true -i ""` to verify
+  4. **Tauri Command Error:** Invoke call failing silently
+- **Debugging Steps:**
+  - Run app in dev mode: `npm run tauri:dev` to see console errors
+  - Check macOS Console.app for errors
+  - Verify FFmpeg installation: `which ffmpeg && ffmpeg -version`
+  - Test FFmpeg device listing: `ffmpeg -f avfoundation -list_devices true -i ""`
+- **Location:** 
+  - `src/hooks/useRecording.ts` line 25-71 (startScreenRecording)
+  - `src-tauri/src/main.rs` line 117-155 (start_recording command)
+- **Status:** 🔍 In Progress - Debugging in development mode
 
 ---
 
@@ -280,6 +319,8 @@ source "$HOME/.cargo/env"
 npm run tauri dev
 # Or use the dev.sh script:
 bash dev.sh
+# Or use the npm script:
+npm run tauri:dev
 ```
 
 ### Building for Production
@@ -287,6 +328,8 @@ bash dev.sh
 source "$HOME/.cargo/env"
 npm run build
 npm run tauri build
+# Or use the npm script:
+npm run tauri:build
 ```
 
 ### Output Location
@@ -361,11 +404,55 @@ ffmpeg -i INPUT_PATH -ss START_TIME -t DURATION \
 - **Drag Clips:** Click and drag clips to reposition on timeline
 - **Master Track Drop:** Creates a copy of clip on master track, original stays in source
 - **Source Track Drop:** Moves clip to different source track position
-- **Clip Selection:** Click to select, Ctrl/Cmd+Click to multi-select
+- **Clip Selection:** Click to select, Ctrl/Cmd+Click to multi-select (automatically sets preferred track)
+- **Track Label Click:** Click track label to jump playhead to first clip on that track
+- **Dynamic Track Creation:** Drag video below last track to create new track automatically
+- **Playback Continuity:** Playback automatically transitions between clips on same track without pausing
 
 ---
 
 ## Recent Major Updates (January 2025)
+
+### Playback Continuity & Track Selection (Latest - January 2025) ✅
+- **Seamless Clip Transitions:** Video playback now automatically transitions from one clip to the next on the same track without pausing or looping
+- **Track Label Clicking:** Clicking track labels (Master Track, Source Track N) automatically moves playhead to first clip on that track
+- **Preferred Track System:** Added `preferredTrack` state to prioritize clips from selected/preferred tracks in video preview and split operations
+- **Clip Selection Sets Preferred Track:** Selecting a clip automatically sets it as the preferred track for operations
+- **Smart Split Function:** Split now respects selected clip's track, prioritizing selected track > preferred track > any clip
+- **Fixed Merge Continuity:** Merge operations on master track now properly maintain continuity and update playback
+- **Video Preview Priority:** Preview prioritizes master track clips over source tracks to match final output
+- **Improved Transition Handling:** Better handling of video source switching between clips with proper loading states
+- **Prevented Playback Loops:** Added logic to prevent timeline from looping back to beginning when clips end
+- **Abort Error Handling:** Gracefully handles video abort errors when switching between clip sources
+- **Files Updated:**
+  - `src/store/timelineStore.ts` - Added `preferredTrack`, `setPreferredTrack()`, improved `combineClips()`
+  - `src/components/VideoPreview.tsx` - Major playback continuity improvements, transition handling
+  - `src/components/Timeline.tsx` - Added track label click handlers, clip selection sets preferred track
+  - `src/components/TrimToolbar.tsx` - Updated split logic to respect selected/preferred tracks
+
+### UI Refinements & Bug Fixes (January 2025) ✅
+- **Reduced Timeline Heights:** Timeline and tracks made more compact (tracks: 65px, timeline: ~240px base)
+- **Improved Text Positioning:** Moved track labels and clip text closer to top for better visibility
+- **Toolbar Display Update:** Changed toolbar display from "Track Label [badge]" to "Track Label - Video Name" format
+- **Removed Button-Style Badges:** Cleaned up toolbar by removing separate track label badges
+- **Fixed Drop Zone Issues:** Removed blocking overlays that prevented dragging to Source Track 2+
+- **Fixed JSON Parse Error:** Added validation to prevent errors when dropping non-JSON data on preview
+- **Micro Tick Marks:** Added minor tick marks in timeline ruler for better granularity
+- **Complete Grid Lines:** All vertical grid lines and playhead now extend properly through all tracks
+- **Centered Playhead:** Playhead line properly centered under triangle indicator
+
+### Dynamic Tracks & Smart Labels (January 2025) ✅
+- **Infinite Track System:** Users can now create unlimited tracks by dragging videos below the last track
+- **Automatic Track Creation:** Drop zone appears below all tracks to create new tracks dynamically
+- **Smart Track Labels:** Tracks automatically labeled as "Screen Recording N" or "Camera Recording N" based on clip types
+- **Track Display in Toolbar:** Shows current track for clip at playhead and selected clips
+- **Vertical Scrolling:** Timeline scrolls vertically as tracks are added
+- **Recording Type Tracking:** Screen and webcam recordings properly tracked and labeled
+- **Files Updated:** 
+  - `src/store/timelineStore.ts` - Added `numSourceTracks`, `getNextAvailableTrack()`, `ensureTrackExists()`, `getTrackLabel()`
+  - `src/hooks/useRecording.ts` - Added `recordingType` tracking and assignment
+  - `src/components/Timeline.tsx` - Added dynamic track rendering with new track drop zone
+  - `src/components/TrimToolbar.tsx` - Added track label display for current/selected clips
 
 ### Master Track System & Video Trimming (Latest - January 2025)
 - ✅ **Master Track System** - Green-themed output track (track 0) for final video
@@ -376,7 +463,7 @@ ffmpeg -i INPUT_PATH -ss START_TIME -t DURATION \
 - ✅ **Fixed Video Trimming** - Playback now correctly respects startTime and endTime trim points
 - ✅ **Playhead Visualization** - Red line spans full timeline height through all tracks
 - ✅ **Dynamic Zoom Timeline** - Timeline extends based on zoom level (30 min at 0.2x, etc.)
-- ✅ **Increased Track Heights** - 100px per track for better clip manipulation
+- ✅ **Optimized Track Heights** - 65px per track (reduced from 100px) for compact timeline while maintaining usability
 - ✅ **Improved Marker Intervals** - Adaptive spacing prevents clutter at all zoom levels
 
 ### UI Redesign & Professional Icon Pack

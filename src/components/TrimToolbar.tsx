@@ -2,13 +2,41 @@ import { useTimelineStore } from '../store/timelineStore';
 import { Scissors, Merge, Trash2 } from 'lucide-react';
 
 export default function TrimToolbar() {
-  const { clips, currentTime, splitClip, combineClips, removeClip, selectedClips, setSelectedClips } = useTimelineStore();
+  const { clips, currentTime, splitClip, combineClips, removeClip, selectedClips, setSelectedClips, getTrackLabel, preferredTrack } = useTimelineStore();
 
   // Find the clip at the current playhead position
-  const clipAtPlayhead = clips.find((clip) => 
-    currentTime >= clip.position + clip.startTime &&
-    currentTime <= clip.position + clip.endTime
-  );
+  // Priority: selected clip's track, then preferred track, then any clip
+  let clipAtPlayhead = null;
+  
+  // First, check if there's a selected clip and prioritize its track
+  if (selectedClips && selectedClips.length > 0) {
+    const selectedClip = clips.find((c) => c.id === selectedClips[0]);
+    if (selectedClip) {
+      // Find any clip on the selected clip's track at the playhead position
+      clipAtPlayhead = clips.find((clip) => 
+        clip.track === selectedClip.track &&
+        currentTime >= clip.position + clip.startTime &&
+        currentTime <= clip.position + clip.endTime
+      );
+    }
+  }
+  
+  // If no clip from selected track, try preferred track
+  if (!clipAtPlayhead && preferredTrack !== null) {
+    clipAtPlayhead = clips.find((clip) => 
+      clip.track === preferredTrack &&
+      currentTime >= clip.position + clip.startTime &&
+      currentTime <= clip.position + clip.endTime
+    );
+  }
+  
+  // If no clip on preferred track, find any clip
+  if (!clipAtPlayhead) {
+    clipAtPlayhead = clips.find((clip) => 
+      currentTime >= clip.position + clip.startTime &&
+      currentTime <= clip.position + clip.endTime
+    );
+  }
 
   // Find adjacent clips for combining
   const getAdjacentClip = () => {
@@ -95,15 +123,31 @@ export default function TrimToolbar() {
 
       <div className="text-xs text-gray-500 flex items-center gap-3">
         {clipAtPlayhead && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-            <span className="truncate max-w-xs">{clipAtPlayhead.name}</span>
+            <span className="truncate max-w-xs">
+              {clipAtPlayhead.track > 0 
+                ? `${getTrackLabel(clipAtPlayhead.track)} - ${clipAtPlayhead.name}`
+                : clipAtPlayhead.name}
+            </span>
           </div>
         )}
         {selectedClips && selectedClips.length > 0 && (
-          <span className="px-2 py-0.5 bg-gray-700 rounded text-xs">
-            {selectedClips.length} selected
-          </span>
+          <div className="flex items-center gap-2">
+            {selectedClips.length === 1 && (() => {
+              const selectedClip = clips.find(c => c.id === selectedClips[0]);
+              return selectedClip ? (
+                <span className="truncate max-w-xs">
+                  {selectedClip.track > 0 
+                    ? `${getTrackLabel(selectedClip.track)} - ${selectedClip.name}`
+                    : selectedClip.name}
+                </span>
+              ) : null;
+            })()}
+            {selectedClips.length > 1 && (
+              <span>{selectedClips.length} selected</span>
+            )}
+          </div>
         )}
       </div>
     </div>
