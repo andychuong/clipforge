@@ -25,13 +25,6 @@ ClipForge is a native desktop video editor that provides a streamlined workflow 
 - **Clip Trimming:** Adjust clip start and end points directly on timeline
 - **Clip Splitting:** Split clips at playhead position
 
-### Planned Features
-- [ ] Advanced trimming with precise controls
-- [ ] Keyboard shortcuts
-- [ ] Transitions and effects
-- [ ] Audio mixing
-- [ ] Project save/load
-
 ## Installation
 
 ### For End Users (macOS)

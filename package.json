@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "bash -c 'source \"$HOME/.cargo/env\" && npm run tauri dev'",
-    "tauri:build": "bash -c 'source \"$HOME/.cargo/env\" && npm run tauri build'"
+    "tauri:build": "bash -c 'source \"$HOME/.cargo/env\" && npm run tauri build'",
+    "tauri:build:windows": "npm run tauri build -- --target x86_64-pc-windows-msvc"
   },
   "dependencies": {
     "lucide-react": "^0.548.0",
