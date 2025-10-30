@@ -1,16 +1,110 @@
 import { useRef, useEffect, useState } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
-import { Play, Pause, SkipBack, Film } from 'lucide-react';
+import { Play, Pause, SkipBack, Film, Volume2, VolumeX } from 'lucide-react';
 
-export default function VideoPreview() {
+import type { PipPosition } from '../hooks/useRecording';
+
+interface VideoPreviewProps {
+  previewStream?: MediaStream | null;
+  isRecording?: boolean;
+  recordingType?: 'screen' | 'webcam' | 'pip' | null;
+  recordingDuration?: number;
+  pipPosition?: PipPosition;
+}
+
+export default function VideoPreview({ previewStream, isRecording = false, recordingType = null, recordingDuration = 0, pipPosition = 'bottom-left' }: VideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const webcamVideoRef = useRef<HTMLVideoElement>(null);
+  const pipVideoRef = useRef<HTMLVideoElement>(null); // For PiP overlay during playback
   const containerRef = useRef<HTMLDivElement>(null);
   const { clips, currentTime, isPlaying, addClip, preferredTrack } = useTimelineStore();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [, setCurrentClip] = useState<string | null>(null); // Unused but needed for state management
+  const [volume, setVolume] = useState(1.0); // Volume from 0 to 1
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentPipClip, setCurrentPipClip] = useState<{ clip: any; pipClip: any; position: PipPosition } | null>(null);
+
+  // Handle preview stream when recording
+  useEffect(() => {
+    const video = videoRef.current;
+    const webcamVideo = webcamVideoRef.current;
+    if (!video) return;
+
+    if (isRecording && previewStream) {
+      console.log('🎥 VideoPreview: isRecording=true, recordingType=', recordingType);
+      
+      // Check if this is picture-in-picture mode with separate streams
+      const screenStream = (previewStream as any).__screenStream;
+      const webcamStream = (previewStream as any).__webcamStream;
+      
+      console.log('🔍 Checking streams:', {
+        hasScreenStream: !!screenStream,
+        hasWebcamStream: !!webcamStream,
+        webcamVideoRef: !!webcamVideo
+      });
+      
+      if (recordingType === 'pip' && screenStream && webcamStream) {
+        console.log('✅ PiP mode: Setting up dual streams');
+        // PiP mode: show screen in main video, webcam in overlay
+        video.srcObject = screenStream;
+        if (webcamVideo) {
+          console.log('📷 Setting webcam video srcObject');
+          webcamVideo.srcObject = webcamStream;
+          webcamVideo.play().catch((err) => {
+            console.error('Error playing webcam preview:', err);
+          });
+        } else {
+          console.warn('⚠️ webcamVideo ref is null!');
+        }
+      } else {
+        console.log('📺 Regular recording mode: Using single stream');
+        // Regular screen or webcam recording
+        video.srcObject = previewStream;
+      }
+      
+      video.muted = isMuted; // Keep user's mute preference
+      video.volume = volume;
+      video.play().catch((err) => {
+        console.error('Error playing preview stream:', err);
+      });
+
+      // Handle stream ending (user stops sharing)
+      const handleTrackEnded = () => {
+        console.log('Preview stream ended');
+        // The recording controls should handle stopping the recording
+      };
+
+      previewStream.getVideoTracks().forEach(track => {
+        track.addEventListener('ended', handleTrackEnded);
+      });
+
+      return () => {
+        previewStream.getVideoTracks().forEach(track => {
+          track.removeEventListener('ended', handleTrackEnded);
+        });
+        // Clean up webcam video
+        if (webcamVideo && webcamVideo.srcObject) {
+          webcamVideo.srcObject = null;
+        }
+      };
+    } else if (!isRecording) {
+      // When not recording, clear the streams
+      if (video.srcObject) {
+        video.srcObject = null;
+      }
+      if (webcamVideo && webcamVideo.srcObject) {
+        webcamVideo.srcObject = null;
+      }
+    }
+  }, [isRecording, previewStream, recordingType, isMuted, volume]);
 
   // Update current clip based on playhead position
   useEffect(() => {
+    // Skip clip updates while recording - show preview instead
+    if (isRecording) {
+      return;
+    }
+
     if (clips.length === 0) {
       setCurrentClip(null);
       return;
@@ -70,6 +164,9 @@ export default function VideoPreview() {
           
           // Wait for video to be ready before setting time and playing
           const handleCanPlay = () => {
+            // Ensure volume is set
+            video.volume = volume;
+            video.muted = isMuted;
             video.currentTime = actualVideoTime;
             
             // Wait a bit for time to be set, then play if needed
@@ -102,13 +199,35 @@ export default function VideoPreview() {
       }
       
       setCurrentClip(src);
+      
+      // Check if this clip has a PiP overlay
+      if (clip.pipOverlayClipId) {
+        const pipClip = clips.find(c => c.id === clip.pipOverlayClipId);
+        if (pipClip) {
+          setCurrentPipClip({
+            clip,
+            pipClip,
+            position: clip.pipPosition || 'bottom-left'
+          });
+        } else {
+          setCurrentPipClip(null);
+        }
+      } else {
+        setCurrentPipClip(null);
+      }
+    } else {
+      setCurrentPipClip(null);
     }
     // Don't set currentClip to null when no clip - keep the last clip to prevent flickering
-  }, [clips, currentTime, preferredTrack, isPlaying]);
+  }, [clips, currentTime, preferredTrack, isPlaying, volume, isMuted, isRecording]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Ensure video is unmuted and volume is set
+    video.muted = isMuted;
+    video.volume = volume;
 
     if (isPlaying && video.src && video.readyState >= 2) {
       video.play().catch((err) => {
@@ -117,7 +236,7 @@ export default function VideoPreview() {
     } else if (!isPlaying) {
       video.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, volume, isMuted]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -137,6 +256,86 @@ export default function VideoPreview() {
       }
     }
   }, [currentTime, clips]);
+
+  // Handle PiP overlay video loading and syncing during playback
+  useEffect(() => {
+    if (!currentPipClip || isRecording) {
+      // Clear PiP video if no PiP clip or if recording
+      if (pipVideoRef.current) {
+        pipVideoRef.current.src = '';
+        pipVideoRef.current.pause();
+      }
+      return;
+    }
+
+    const pipVideo = pipVideoRef.current;
+    const mainVideo = videoRef.current;
+    if (!pipVideo || !mainVideo) return;
+
+    const { clip, pipClip } = currentPipClip;
+    const pipSrc = pipClip.blobUrl || pipClip.path;
+
+    // Sync PiP video with main video based on timeline position
+    const syncPipVideo = () => {
+      if (!mainVideo.src || !pipVideo.src) return;
+
+      const timelineOffset = currentTime - clip.position;
+      const pipVideoTime = pipClip.startTime + timelineOffset;
+
+      // Check if we're within both clips' trimmed bounds (based on timeline offset)
+      const mainClipDuration = clip.endTime - clip.startTime;
+      const pipClipDuration = pipClip.endTime - pipClip.startTime;
+      
+      if (timelineOffset >= 0 && timelineOffset <= mainClipDuration && 
+          timelineOffset >= 0 && timelineOffset <= pipClipDuration &&
+          pipVideoTime >= pipClip.startTime && pipVideoTime <= pipClip.endTime) {
+        if (Math.abs(pipVideo.currentTime - pipVideoTime) > 0.1) {
+          pipVideo.currentTime = pipVideoTime;
+        }
+
+        // Sync play/pause state
+        if (isPlaying && mainVideo.readyState >= 2 && pipVideo.readyState >= 2) {
+          if (pipVideo.paused) {
+            pipVideo.play().catch((err) => {
+              console.error('Error playing PiP video:', err);
+            });
+          }
+        } else {
+          if (!pipVideo.paused) {
+            pipVideo.pause();
+          }
+        }
+      } else {
+        // Outside bounds, pause PiP video
+        if (!pipVideo.paused) {
+          pipVideo.pause();
+        }
+      }
+    };
+
+    // Load PiP video if not already loaded
+    if (pipVideo.src !== pipSrc) {
+      pipVideo.src = pipSrc;
+      pipVideo.muted = true; // PiP is always muted (main video has audio)
+      pipVideo.volume = 0;
+      
+      pipVideo.addEventListener('loadedmetadata', () => {
+        // Initial sync when video is ready
+        syncPipVideo();
+      }, { once: true });
+    } else {
+      // Already loaded, sync immediately
+      syncPipVideo();
+    }
+
+    // Sync on main video time updates
+    const handleMainTimeUpdate = () => syncPipVideo();
+    mainVideo.addEventListener('timeupdate', handleMainTimeUpdate);
+
+    return () => {
+      mainVideo.removeEventListener('timeupdate', handleMainTimeUpdate);
+    };
+  }, [currentPipClip, currentTime, isPlaying, isRecording]);
 
   const handlePlayPause = () => {
     const newPlayingState = !isPlaying;
@@ -330,6 +529,7 @@ export default function VideoPreview() {
         ref={videoRef}
         className="max-w-full max-h-full object-contain"
         controls={false}
+        muted={isMuted}
         onTimeUpdate={handleTimeUpdate}
         onEnded={() => {
           const store = useTimelineStore.getState();
@@ -362,9 +562,83 @@ export default function VideoPreview() {
       >
       </video>
 
-      {/* Playback Controls Overlay */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="flex items-center space-x-4 pointer-events-auto">
+      {/* Webcam overlay for picture-in-picture mode */}
+      {isRecording && recordingType === 'pip' && (() => {
+        // Match FFmpeg positioning exactly: 20px from edges
+        const getPositionStyle = () => {
+          switch (pipPosition) {
+            case 'top-left':
+              return { top: '20px', left: '20px' };
+            case 'top-right':
+              return { top: '20px', right: '20px' };
+            case 'bottom-left':
+              return { bottom: '20px', left: '20px' };
+            case 'bottom-right':
+              return { bottom: '20px', right: '20px' };
+            default:
+              return { bottom: '20px', left: '20px' };
+          }
+        };
+        
+        return (
+          <div 
+            className="absolute w-64 h-48 bg-gray-900 rounded-lg border-2 border-blue-500 shadow-2xl overflow-hidden" 
+            style={{ zIndex: 20, ...getPositionStyle() }}
+          >
+            <video
+              ref={webcamVideoRef}
+              className="w-full h-full object-cover"
+              autoPlay
+              muted
+              playsInline
+            />
+            <div className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+              WEBCAM
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* PiP overlay for playback (when clip has pipOverlayClipId) */}
+      {!isRecording && currentPipClip && (() => {
+        // Match FFmpeg positioning exactly: 20px from edges (same as recording)
+        const getPositionStyle = () => {
+          switch (currentPipClip.position) {
+            case 'top-left':
+              return { top: '20px', left: '20px' };
+            case 'top-right':
+              return { top: '20px', right: '20px' };
+            case 'bottom-left':
+              return { bottom: '20px', left: '20px' };
+            case 'bottom-right':
+              return { bottom: '20px', right: '20px' };
+            default:
+              return { bottom: '20px', left: '20px' };
+          }
+        };
+        
+        return (
+          <div 
+            className="absolute w-64 h-48 bg-gray-900 rounded-lg border-2 border-purple-500 shadow-2xl overflow-hidden" 
+            style={{ zIndex: 20, ...getPositionStyle() }}
+          >
+            <video
+              ref={pipVideoRef}
+              className="w-full h-full object-cover"
+              muted
+              playsInline
+            />
+            <div className="absolute top-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded">
+              PiP
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Playback Controls Overlay - Hidden during recording */}
+      {!isRecording && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="flex items-center space-x-4 pointer-events-auto">
           <button
             onClick={handleStop}
             className="bg-gray-800/80 hover:bg-gray-700/90 text-white rounded-full w-12 h-12 flex items-center justify-center transition-all"
@@ -404,16 +678,88 @@ export default function VideoPreview() {
           </button>
         </div>
       </div>
+      )}
 
-      {/* Time Display */}
+      {/* Volume Control - Bottom Left - Hidden during recording */}
+      {!isRecording && (
+        <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm px-3 py-2 rounded flex items-center gap-2 pointer-events-auto">
+        <button
+          onClick={() => {
+            setIsMuted(!isMuted);
+          }}
+          className="text-white hover:text-gray-300 transition-colors"
+          title={isMuted ? "Unmute" : "Mute"}
+        >
+          {isMuted || volume === 0 ? (
+            <VolumeX className="h-5 w-5" />
+          ) : (
+            <Volume2 className="h-5 w-5" />
+          )}
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={volume}
+          onChange={(e) => {
+            const newVolume = parseFloat(e.target.value);
+            setVolume(newVolume);
+            setIsMuted(newVolume === 0);
+            if (videoRef.current) {
+              videoRef.current.volume = newVolume;
+              videoRef.current.muted = newVolume === 0;
+            }
+          }}
+          className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+          title={`Volume: ${Math.round(volume * 100)}%`}
+        />
+        <span className="text-xs text-gray-300 w-8 text-right font-mono">
+          {Math.round(volume * 100)}%
+        </span>
+      </div>
+      )}
+
+      {/* Recording Indicator - Position to avoid webcam overlay */}
+      {isRecording && (() => {
+        const indicatorPosition = recordingType === 'pip' ? (
+          pipPosition.includes('left') ? 'right-4' : 'left-4'
+        ) : 'left-4';
+        
+        return (
+          <div className={`absolute top-4 ${indicatorPosition} bg-red-600/90 backdrop-blur-sm px-4 py-2 rounded flex items-center gap-2`}>
+            <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+            <span className="text-sm font-semibold text-white">
+              {recordingType === 'screen' && 'Recording Screen'}
+              {recordingType === 'webcam' && 'Recording Webcam'}
+              {recordingType === 'pip' && 'Recording Screen + Webcam'}
+              {!recordingType && 'Recording'}
+              {recordingDuration > 0 && ` (${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, '0')})`}
+            </span>
+          </div>
+        );
+      })()}
+
+      {/* Time Display - Show recording duration when recording */}
       <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded text-sm font-mono">
-        {Math.floor(currentTime / 60)}:
-        {Math.floor(currentTime % 60)
-          .toString()
-          .padStart(2, '0')}
+        {isRecording ? (
+          <span className="text-red-400">
+            REC {Math.floor(recordingDuration / 60)}:
+            {Math.floor(recordingDuration % 60)
+              .toString()
+              .padStart(2, '0')}
+          </span>
+        ) : (
+          <>
+            {Math.floor(currentTime / 60)}:
+            {Math.floor(currentTime % 60)
+              .toString()
+              .padStart(2, '0')}
+          </>
+        )}
       </div>
 
-      {clips.length === 0 && (
+      {clips.length === 0 && !isRecording && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-600">
           <div className="text-center">
             <Film className="h-16 w-16 mx-auto mb-3 opacity-20" />

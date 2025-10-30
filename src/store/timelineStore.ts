@@ -11,7 +11,9 @@ export interface Clip {
   track: number;
   position: number; // position on timeline in seconds
   fileSize?: number; // File size in bytes (optional, for export estimation)
-  recordingType?: 'screen' | 'webcam'; // Type of recording if it's a recording
+  recordingType?: 'screen' | 'webcam' | 'pip'; // Type of recording if it's a recording
+  pipOverlayClipId?: string; // If this master track clip has a PiP overlay, reference the webcam clip ID
+  pipPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'; // PiP overlay position
 }
 
 interface TimelineState {

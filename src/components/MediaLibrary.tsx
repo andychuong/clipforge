@@ -3,15 +3,22 @@ import { useTimelineStore } from '../store/timelineStore';
 import { useFileDrop } from '../hooks/useFileDrop';
 import { Plus, Trash2, Film } from 'lucide-react';
 
-interface MediaFile {
+export interface MediaFile {
   name: string;
   path: string; // Real file system path for export
   blobUrl: string; // Blob URL for video preview
   duration: number;
+  fileSize?: number; // File size in bytes
+  width?: number; // Video width in pixels
+  height?: number; // Video height in pixels
   originalFile?: File; // Store original file for lazy path generation
 }
 
-export default function MediaLibrary() {
+interface MediaLibraryProps {
+  onFileSelect?: (file: MediaFile | null) => void;
+}
+
+export default function MediaLibrary({ onFileSelect }: MediaLibraryProps) {
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingItem, setDraggingItem] = useState<string | null>(null);
@@ -54,7 +61,10 @@ export default function MediaLibrary() {
         });
 
         const duration = video.duration || 0;
-        console.log('Duration:', duration);
+        const width = video.videoWidth || 0;
+        const height = video.videoHeight || 0;
+        const fileSize = file.size || 0;
+        console.log('Duration:', duration, 'Resolution:', `${width}x${height}`, 'Size:', fileSize);
         
         // Add to media library immediately with placeholder path
         // The real path will be generated when needed for export
@@ -63,6 +73,9 @@ export default function MediaLibrary() {
           path: '', // Will be filled when exporting
           blobUrl: blobUrl,
           duration,
+          fileSize,
+          width,
+          height,
           originalFile: file, // Store reference for later
         };
 
@@ -149,11 +162,18 @@ export default function MediaLibrary() {
                   video.src = blobUrl;
                 });
                 
+                const width = video.videoWidth || 0;
+                const height = video.videoHeight || 0;
+                const fileSize = file.size || 0;
+                
                 const mediaFile: MediaFile = { 
                   name: file.name, 
                   path: '', // Will be generated when exporting
                   blobUrl: blobUrl,
                   duration,
+                  fileSize,
+                  width,
+                  height,
                   originalFile: file,
                 };
                 setMediaFiles((prev) => [...prev, mediaFile]);
@@ -187,7 +207,12 @@ export default function MediaLibrary() {
                 draggingItem === file.name ? 'opacity-50' : ''
               } ${selectedFile === file.name ? 'ring-1 ring-blue-500' : ''}`}
               onClick={() => {
-                setSelectedFile(selectedFile === file.name ? null : file.name);
+                const newSelection = selectedFile === file.name ? null : file.name;
+                setSelectedFile(newSelection);
+                // Notify parent component of selection
+                if (onFileSelect) {
+                  onFileSelect(newSelection ? file : null);
+                }
               }}
             >
               <div

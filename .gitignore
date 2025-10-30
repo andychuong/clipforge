@@ -24,7 +24,10 @@ dist-ssr
 *.sw?
 
 # Rust
-target
-Cargo.lock
-src-tauri/target
+target/
+src-tauri/target/
+# Keep Cargo.lock for applications (only ignore for libraries)
+
+# Build artifacts (these are regenerated on build)
+src-tauri/target/release/bundle/
 

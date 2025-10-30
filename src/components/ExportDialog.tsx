@@ -146,21 +146,85 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
       }, updateInterval);
       
       try {
-        const result = await invoke('export_video', {
-          params: {
-            input_path: inputPath,
-            output_path: outputPath,
-            start_time: clip.startTime,
-            end_time: clip.endTime,
+        // Check if this clip has a PiP overlay
+        if (clip.pipOverlayClipId) {
+          const pipClip = clips.find(c => c.id === clip.pipOverlayClipId);
+          
+          if (!pipClip) {
+            throw new Error('PiP overlay clip not found');
           }
-        });
+          
+          // Generate PiP clip path if needed
+          let pipPath = pipClip.path;
+          if (!pipPath || pipPath.trim() === '' || pipPath.startsWith('blob:')) {
+            const blobUrl = pipClip.blobUrl || pipClip.path;
+            const response = await fetch(blobUrl);
+            const blob = await response.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+            const fileBytes = Array.from(new Uint8Array(arrayBuffer));
+            
+            pipPath = await invoke('process_file', {
+              params: {
+                file_data: fileBytes,
+                filename: pipClip.name,
+              }
+            });
+          }
+          
+          console.log('🚀 Exporting with PiP overlay:', {
+            main: inputPath,
+            pip: pipPath,
+            pipPosition: clip.pipPosition || 'bottom-left',
+            mainTime: `${clip.startTime}s - ${clip.endTime}s`,
+            pipTime: `${pipClip.startTime}s - ${pipClip.endTime}s`
+          });
+          
+          // Simulate progress while waiting for FFmpeg
+          setProgress(10);
+          console.log('⏳ Starting FFmpeg export (this may take a while)...');
+          
+          try {
+            const result = await invoke('export_video_with_pip', {
+              params: {
+                main_path: inputPath,
+                pip_path: pipPath,
+                output_path: outputPath,
+                main_start_time: clip.startTime,
+                main_end_time: clip.endTime,
+                pip_start_time: pipClip.startTime,
+                pip_end_time: pipClip.endTime,
+                pip_position: clip.pipPosition || 'bottom-left',
+              }
+            });
+            
+            console.log('✅ Export result:', result);
+            clearInterval(progressInterval);
+            setProgress(100);
+            
+            alert(`✅ Export complete with PiP overlay!\n\nSaved to:\n${outputPath}`);
+            onClose();
+          } catch (exportError: any) {
+            console.error('❌ Export failed:', exportError);
+            throw exportError;
+          }
+        } else {
+          // Normal export without PiP
+          const result = await invoke('export_video', {
+            params: {
+              input_path: inputPath,
+              output_path: outputPath,
+              start_time: clip.startTime,
+              end_time: clip.endTime,
+            }
+          });
 
-        console.log('Export result:', result);
-        clearInterval(progressInterval);
-        setProgress(100);
-        
-        alert(`Export complete! Saved to: ${outputPath}`);
-        onClose();
+          console.log('Export result:', result);
+          clearInterval(progressInterval);
+          setProgress(100);
+          
+          alert(`Export complete! Saved to: ${outputPath}`);
+          onClose();
+        }
       } catch (err: any) {
         clearInterval(progressInterval);
         setProgress(0);
@@ -237,6 +301,7 @@ export default function ExportDialog({ isOpen, onClose, clips }: ExportDialogPro
               />
             </div>
             <p className="text-sm text-gray-400 mt-2">{progress}% complete</p>
+            {progress < 100 && <p className="text-xs text-gray-500 mt-1">Processing video export with FFmpeg... This may take a minute.</p>}
           </div>
         )}
 

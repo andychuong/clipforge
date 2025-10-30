@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
+import { Video } from 'lucide-react';
 
 export default function Timeline() {
   const { 
@@ -603,7 +604,15 @@ export default function Timeline() {
                     style={{ marginLeft: '-2px' }}
                   />
                   <div className="flex-1 truncate px-1.5 pt-0.5 pb-1 flex flex-col">
-                    <div className="text-[10px] font-medium text-white truncate">{clip.name}</div>
+                    <div className="flex items-center gap-1">
+                      <div className="text-[10px] font-medium text-white truncate">{clip.name}</div>
+                      {clip.pipOverlayClipId && (
+                        <Video 
+                          className="h-3 w-3 text-purple-300 flex-shrink-0" 
+                          {...({ title: `PiP: ${clip.pipPosition || 'bottom-left'}` } as any)} 
+                        />
+                      )}
+                    </div>
                     <div className="text-[9px] text-blue-200 opacity-70">
                       {Math.floor(clip.endTime - clip.startTime)}s
                     </div>

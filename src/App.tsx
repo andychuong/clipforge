@@ -1,16 +1,21 @@
 import { useState } from 'react';
 import { useTimelineStore } from './store/timelineStore';
-import MediaLibrary from './components/MediaLibrary';
+import MediaLibrary, { type MediaFile } from './components/MediaLibrary';
 import VideoPreview from './components/VideoPreview';
 import Timeline from './components/Timeline';
 import ExportDialog from './components/ExportDialog';
 import TrimToolbar from './components/TrimToolbar';
 import RecordingControls from './components/RecordingControls';
+import MetadataPanel from './components/MetadataPanel';
+import { useRecording } from './hooks/useRecording';
 import { Download } from 'lucide-react';
 
 function App() {
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [selectedMediaFile, setSelectedMediaFile] = useState<MediaFile | null>(null);
   const clips = useTimelineStore(state => state.clips);
+  const recordingHook = useRecording();
+  const { isRecording, recordingType, duration: recordingDuration, previewStream, pipPosition } = recordingHook;
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white overflow-hidden">
@@ -30,20 +35,40 @@ function App() {
       </div>
 
       {/* Recording Controls */}
-      <RecordingControls />
+      <RecordingControls
+        recordingState={recordingHook}
+        onStartScreen={recordingHook.startScreenRecording}
+        onStartWebcam={recordingHook.startWebcamRecording}
+        onStartPictureInPicture={recordingHook.startPictureInPictureRecording}
+        onStop={recordingHook.stopRecording}
+        onSelectScreen={recordingHook.setSelectedScreenIndex}
+        onSelectWebcam={recordingHook.setSelectedWebcamIndex}
+        onSetPipPosition={recordingHook.setPipPosition}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Media Library - Narrower */}
+        {/* Left Sidebar - Media Library and Metadata - Narrower */}
         <div className="w-56 bg-gray-950 border-r border-gray-700 overflow-hidden flex-shrink-0 flex flex-col">
-          <MediaLibrary />
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+            <MediaLibrary onFileSelect={setSelectedMediaFile} />
+          </div>
+          <div className="h-64 flex-shrink-0 border-t border-gray-700">
+            <MetadataPanel selectedFile={selectedMediaFile} />
+          </div>
         </div>
 
         {/* Center - Preview and Timeline */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Video Preview - Larger */}
           <div className="flex-1 bg-black overflow-hidden flex items-center justify-center min-h-0">
-            <VideoPreview />
+            <VideoPreview 
+              previewStream={previewStream}
+              isRecording={isRecording}
+              recordingType={recordingType}
+              recordingDuration={recordingDuration}
+              pipPosition={pipPosition}
+            />
           </div>
 
           {/* Trim Toolbar - Above Timeline */}

@@ -2,18 +2,19 @@
 
 **Last Updated:** January 2025  
 **Project:** ClipForge Desktop Video Editor  
-**Status:** Phase 5+ Complete - Playback Continuity - Track Selection - UI Refinements
+**Status:** Phase 6 Complete - Advanced Recording System with Device Selection & PiP
 
 ---
 
 ## Project Overview
 
-ClipForge is a desktop video editor built with **Tauri (Rust + React)** that enables users to import, edit, and export videos. The MVP focuses on basic editing capabilities with trim functionality and MP4 export.
+ClipForge is a desktop video editor built with **Tauri (Rust + React)** that enables users to import, edit, record, and export videos. The app now features advanced recording capabilities with device selection and picture-in-picture (PiP) support.
 
 ### Key Technologies
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Zustand
 - **Backend:** Tauri 2.0 + Rust
 - **Video Processing:** FFmpeg (via system installation)
+- **Recording:** FFmpeg avfoundation (macOS native screen/webcam capture)
 - **Platform:** macOS (primary), extensible to Windows/Linux
 
 ---
@@ -23,7 +24,7 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 ### Why Tauri?
 - **Native Performance:** Rust backend provides fast, memory-safe operations
 - **Small Binary:** ~12MB compared to Electron's 100MB+
-- **System Integration:** Direct access to file system, FFmpeg commands
+- **System Integration:** Direct access to file system, FFmpeg commands, native recording
 - **Security:** Process isolation, capability-based security model
 
 ### State Management (Zustand)
@@ -31,6 +32,18 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - **Structure:**
   - `timelineStore.ts` - Manages clips, playhead, zoom, playback state
   - Single store with clear action methods
+
+### Recording Architecture
+- **Native FFmpeg Recording:** Uses FFmpeg with avfoundation for hardware-accelerated capture
+- **Device Enumeration:** Backend enumerates all screens, webcams, and audio devices
+- **Three Recording Modes:**
+  1. **Screen Only:** Records selected screen with audio
+  2. **Webcam Only:** Records selected webcam with audio
+  3. **Picture-in-Picture (PiP):** Records screen with webcam overlay (preview-only, recorded separately)
+- **Device Selection:** Users can select specific screens and webcams from dropdowns
+- **PiP Positioning:** Webcam overlay can be placed in any of 4 corners (top-left, top-right, bottom-left, bottom-right)
+- **Preview Streams:** Browser MediaStream API provides live preview, FFmpeg handles actual recording
+- **Auto-Save:** Recordings automatically saved to timeline after stopping
 
 ### Timeline Architecture
 - **Master Track (Track 0):** Green-themed output track - final continuous video with no gaps
@@ -52,22 +65,6 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - **Blob URL Issue:** Files imported via browser File API get blob URLs
 - **Solution:** Use Tauri's `.path` property to get actual file paths
 - **Duration Extraction:** Uses HTML5 video element metadata
-
-### Timeline Scrolling
-- **Issue:** Timeline needed better scrolling behavior for long videos
-- **Solution:** Implemented single horizontal scrollbar for both ruler and tracks
-- **Zoom Behavior:** Adaptive marker intervals based on zoom level to prevent overlapping labels
-  - Zoom < 0.2x: markers every 5 minutes (300s)
-  - Zoom < 0.5x: markers every 2 minutes (120s)
-  - Zoom < 1x: markers every 1 minute (60s)
-  - Zoom < 2x: markers every 30 seconds
-  - Zoom < 5x: markers every 10 seconds
-  - Zoom ≥ 5x: markers every 5 seconds
-- **Timeline Extension:** Timeline extends based on zoom level for better overview
-  - Very zoomed out (0.2x): Shows 30 minutes
-  - Zoomed out (0.5x): Shows 15 minutes
-  - Normal (1x): Shows 10 minutes
-  - Zoomed in (2x+): Shows 3-5 minutes
 
 ---
 
@@ -95,34 +92,32 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 - ✅ Export progress indicator
 - ✅ Export dialog UI
 - ✅ Native .app binary built (12MB)
-- ⚠️ **File Path Issue:** Fixed - now uses Tauri's file.path property
+- ✅ File path system using Tauri's file.path property
 
-### Phase 4: Recording ✅ (Complete - Native Implementation)
+### Phase 4-5: Recording & Polish ✅ (Complete)
 - ✅ Recording UI with Screen/Webcam/PiP buttons
 - ✅ RecordingControls component with duration timer
 - ✅ useRecording hook with native Tauri commands
 - ✅ Rust backend using FFmpeg for screen/webcam capture
 - ✅ Recording saved to /tmp and added to timeline automatically
-- ✅ Graceful error handling
 - ✅ Native macOS recording using avfoundation
-- ✅ Correct device mapping (device 4 for screen, device 0 for webcam)
-- ✅ File reading via read_file_bytes for blob URL creation
+- ✅ Split/Merge/Delete clip functionality
+- ✅ Master track system with continuity
+- ✅ Dynamic source tracks with smart labels
+- ✅ Playback continuity between clips
+- ✅ Professional UI with Lucide icons
 
-### Phase 5: Polish ✅ (Complete)
-- ✅ Split clip functionality - Implemented
-- ✅ Merge clip functionality - Implemented
-- ✅ Delete clip functionality - Implemented
-- ✅ Master track system - Green-themed output track with no gaps
-- ✅ Source tracks - Blue-themed staging tracks (1, 2)
-- ✅ Clip copying to master track - Original stays in source track
-- ✅ Timeline zoom - Dynamic extension based on zoom level
-- ✅ Video trimming - Fixed playback to respect trim points
-- ✅ Playhead visualization - Full height line through all tracks
-- ✅ Professional UI redesign - Complete
-- ✅ Professional icons (Lucide React) - Complete
-- ✅ Optimized track height (65px per track, reduced for compact timeline)
-- ⏳ Snap-to-grid - Not implemented
-- ⏳ Keyboard shortcuts - Basic ones work
+### Phase 6: Advanced Recording System ✅ (Complete - January 2025)
+- ✅ **Device Enumeration:** `list_devices` Tauri command to list all screens, webcams, and audio devices
+- ✅ **Device Selection UI:** Dropdown menus to select specific screens and webcams
+- ✅ **PiP Positioning:** 4-corner positioning system (top-left, top-right, bottom-left, bottom-right)
+- ✅ **Multi-Device Support:** Handles multiple screens and multiple webcams
+- ✅ **Smart Recording Indicator:** Automatically repositions to avoid overlapping with webcam overlay
+- ✅ **Separate Stream Management:** Browser streams for preview, FFmpeg for recording
+- ✅ **Recording Type Tracking:** `recordingType: 'screen' | 'webcam' | 'pip'`
+- ✅ **Auto-Detection Removed:** Simplified to manual device selection for reliability
+- ✅ **Clean State Management:** Functional updates to prevent state overwrites
+- ✅ **Error Handling:** Comprehensive error handling with user-friendly messages
 
 ---
 
@@ -131,22 +126,24 @@ ClipForge is a desktop video editor built with **Tauri (Rust + React)** that ena
 ### Core App Files
 ```
 src/
-├── App.tsx                 # Main layout, export button
+├── App.tsx                 # Main layout, export button, recording integration
 ├── store/
 │   └── timelineStore.ts    # Zustand state management
 ├── components/
 │   ├── MediaLibrary.tsx    # Media import and library (compact sidebar)
-│   ├── VideoPreview.tsx   # Video player with play/pause controls
+│   ├── VideoPreview.tsx    # Video player with PiP overlay support
 │   ├── Timeline.tsx        # Timeline tracks and clip arrangement
-│   ├── TrimToolbar.tsx    # Editing tools (Split, Merge)
-│   └── ExportDialog.tsx   # Export functionality UI
+│   ├── TrimToolbar.tsx     # Editing tools (Split, Merge)
+│   ├── RecordingControls.tsx  # Device selection and recording controls
+│   └── ExportDialog.tsx    # Export functionality UI
 ├── hooks/
-│   └── useFileDrop.ts      # Drag & drop handler
+│   ├── useFileDrop.ts      # Drag & drop handler
+│   └── useRecording.ts     # Recording state and device management
 └── tauri.d.ts             # Tauri type definitions
 
 src-tauri/
 ├── src/
-│   └── main.rs            # Rust backend, FFmpeg commands
+│   └── main.rs            # Rust backend, FFmpeg commands, device enumeration
 ├── capabilities/
 │   └── default.json       # Tauri permissions
 └── Cargo.toml             # Rust dependencies
@@ -155,21 +152,30 @@ src-tauri/
 ### Important Tauri Commands (Rust)
 ```rust
 // Available commands in src-tauri/src/main.rs:
+list_devices()             // Enumerate screens, webcams, and audio devices
+start_recording(params)    // Start recording with device indices and type
+  // params: {
+  //   output_path: String,
+  //   recording_type: "screen" | "webcam" | "pip",
+  //   screen_index: Option<u32>,      // FFmpeg device index (4+ for screens)
+  //   webcam_index: Option<u32>,      // FFmpeg device index (0-3 for webcams)
+  //   pip_position: Option<String>,   // "top-left" | "top-right" | "bottom-left" | "bottom-right"
+  //   pip_size: Option<String>        // Reserved for future use
+  // }
+stop_recording()           // Stop current recording and save file
+is_recording()             // Check if recording is currently active
+read_file_bytes(path)      // Read file content as bytes for blob creation
 export_video(params)       // Trim and export clip to MP4
 process_file(params)       // Save blob data to temp file, return path
 check_ffmpeg()             // Verify FFmpeg installation
 get_documents_path()       // Get user Documents directory
-start_recording(params)    // Start screen/webcam recording with FFmpeg
-stop_recording()           // Stop current recording and save file
-is_recording()             // Check if recording is currently active
-read_file_bytes(path)      // Read file content as bytes for blob creation
 ```
 
 ### Store Actions (Zustand)
 ```typescript
 // Available actions in src/store/timelineStore.ts:
-addClip(clip)                 // Add clip to timeline (auto-positions at 0:00 for new clips)
-removeClip(id)                 // Remove clip
+addClip(clip)                 // Add clip to timeline
+removeClip(id)                // Remove clip
 updateClip(id, updates)       // Update clip properties
 setCurrentTime(time)          // Set playhead position
 setIsPlaying(bool)            // Set playback state
@@ -178,64 +184,136 @@ combineClips(id1, id2)        // Merge two adjacent clips
 setSelectedClips(ids)         // Set selected clip IDs
 moveClip(clipId, pos, track)  // Move/reposition clip on timeline
 setDraggingClipId(id)         // Track currently dragging clip
-getMasterTrackClips()         // Get all clips on master track (track 0)
+getMasterTrackClips()         // Get all clips on master track
 ensureMasterTrackContinuity() // Reorder master track clips with no gaps
-getNextAvailableTrack()       // Find next available empty track or create new one
+getNextAvailableTrack()       // Find next available empty track
 ensureTrackExists(num)        // Ensure track exists by expanding if needed
-getTrackLabel(num)             // Get smart track label based on clip types (Screen/Camera Recording)
-setPreferredTrack(track)      // Set preferred track for preview and split operations (null for auto)
+getTrackLabel(num)            // Get smart track label
+setPreferredTrack(track)      // Set preferred track for operations
+```
+
+### Recording Hook (useRecording)
+```typescript
+// Available from src/hooks/useRecording.ts:
+const {
+  isRecording,                    // Boolean: currently recording
+  recordingType,                  // 'screen' | 'webcam' | 'pip' | null
+  duration,                       // Recording duration in seconds
+  error,                          // Error message if any
+  previewStream,                  // MediaStream for preview
+  availableDevices,               // DeviceInfo[] - all devices
+  selectedScreenIndex,            // Currently selected screen index
+  selectedWebcamIndex,            // Currently selected webcam index
+  pipPosition,                    // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  startScreenRecording,           // Start screen recording
+  startWebcamRecording,           // Start webcam recording
+  startPictureInPictureRecording, // Start PiP recording
+  stopRecording,                  // Stop current recording
+  setSelectedScreenIndex,         // Select screen device
+  setSelectedWebcamIndex,         // Select webcam device
+  setPipPosition,                 // Set PiP corner position
+} = useRecording();
 ```
 
 ### Timeline Data Structure
 ```typescript
 interface Clip {
-  id: string;              // Unique identifier
-  name: string;            // Display name
-  path: string;            // Real file system path for export
-  blobUrl?: string;        // Blob URL for video preview (optional)
-  duration: number;        // Total duration in seconds
-  startTime: number;       // Trim start (seconds)
-  endTime: number;         // Trim end (seconds)
-  track: number;           // Timeline track (0 = master, 1+ = source tracks)
-  position: number;         // Timeline position in seconds
-  fileSize?: number;       // File size in bytes (for export estimation)
-  recordingType?: 'screen' | 'webcam'; // Type of recording if it's a recording
+  id: string;                // Unique identifier
+  name: string;              // Display name
+  path: string;              // Real file system path for export
+  blobUrl?: string;          // Blob URL for video preview (optional)
+  duration: number;          // Total duration in seconds
+  startTime: number;         // Trim start (seconds)
+  endTime: number;           // Trim end (seconds)
+  track: number;             // Timeline track (0 = master, 1+ = source tracks)
+  position: number;          // Timeline position in seconds
+  fileSize?: number;         // File size in bytes (for export estimation)
+  recordingType?: 'screen' | 'webcam' | 'pip'; // Type of recording
 }
+
+interface DeviceInfo {
+  index: number;             // FFmpeg device index
+  name: string;              // Device name from FFmpeg
+  device_type: 'screen' | 'webcam' | 'audio'; // Device type
+}
+
+type PipPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 ```
 
 ---
 
-## Current Project Structure
+## Recording System Architecture
 
+### Device Enumeration (FFmpeg)
+```bash
+# Backend runs this command to enumerate devices:
+ffmpeg -f avfoundation -list_devices true -i ""
+
+# Example output parsed:
+# [0] MacBook Pro Camera          -> webcam
+# [1] Andys iPhone Camera         -> webcam
+# [4] Capture screen 0            -> screen
+# [5] Capture screen 1            -> screen
+# [0] MacBook Pro Microphone      -> audio
 ```
-clipforge/
-├── .git/                    # Git repository
-├── .gitignore              # Git ignore rules
-├── dev.sh                   # Development script
-├── MEMORY_BANK.md          # Project documentation
-├── README.md               # Project readme
-├── index.html              # Main HTML entry point
-├── package.json            # Node.js dependencies
-├── package-lock.json       # Locked dependencies
-├── postcss.config.js       # PostCSS config
-├── tailwind.config.js      # Tailwind CSS config
-├── tsconfig.json           # TypeScript config
-├── vite.config.ts          # Vite bundler config
-├── dist/                   # Build output (gitignored)
-├── node_modules/           # Dependencies (gitignored)
-├── src/                    # Frontend source code
-│   ├── App.tsx            # Main app component
-│   ├── main.tsx           # Entry point
-│   ├── components/        # React components
-│   ├── hooks/             # Custom hooks
-│   ├── store/             # State management (Zustand)
-│   └── styles/            # CSS styles
-└── src-tauri/              # Backend (Rust)
-    ├── src/               # Rust source code
-    ├── target/            # Build output (gitignored)
-    ├── capabilities/      # Tauri permissions
-    └── icons/             # App icons
+
+### Recording Flow
+1. **Device Loading:**
+   - App loads available devices via `list_devices` command
+   - Devices populated in dropdown menus
+   - User selects preferred screen/webcam
+
+2. **Start Recording:**
+   - User clicks "Screen", "Webcam", or "Screen + Webcam" button
+   - Frontend requests browser MediaStream for preview (getDisplayMedia/getUserMedia)
+   - Frontend invokes `start_recording` with selected device indices
+   - Backend spawns FFmpeg process with avfoundation input
+   - Preview stream displayed in VideoPreview component
+   - Duration timer starts
+
+3. **During Recording:**
+   - FFmpeg captures to `/tmp/recording_[timestamp].mp4`
+   - Preview plays in browser (separate from recording)
+   - For PiP: Both screen and webcam streams shown with overlay
+   - Recording indicator positioned to avoid webcam overlay
+
+4. **Stop Recording:**
+   - User clicks "Stop" button
+   - Frontend invokes `stop_recording`
+   - Backend sends SIGINT to FFmpeg process
+   - FFmpeg finalizes video file
+   - File read via `read_file_bytes` and converted to blob URL
+   - Clip automatically added to timeline on next available track
+   - All preview streams cleaned up
+
+### FFmpeg Recording Commands
+
+**Screen Recording:**
+```bash
+ffmpeg -f avfoundation -framerate 30 -i "[screen_index]:0" \
+  -c:v libx264 -preset ultrafast -crf 23 \
+  -c:a aac -b:a 128k output.mp4
 ```
+
+**Webcam Recording:**
+```bash
+ffmpeg -f avfoundation -framerate 30 -video_size 1280x720 \
+  -i "[webcam_index]:0" \
+  -c:v libx264 -preset ultrafast -crf 23 \
+  -c:a aac -b:a 128k output.mp4
+```
+
+**PiP Recording (Current):**
+```bash
+# Currently records screen only
+# Webcam shown as overlay in preview but not composited into recording
+# Future: Use filter_complex for true PiP compositing
+ffmpeg -f avfoundation -framerate 30 -i "[screen_index]:0" \
+  -c:v libx264 -preset ultrafast -crf 23 \
+  -c:a aac -b:a 128k output.mp4
+```
+
+---
 
 ## Known Issues & Solutions
 
@@ -245,69 +323,93 @@ clipforge/
   - `blobUrl`: For instant preview in browser
   - `path`: Empty initially, generated on-demand for export
 - **Implementation:** `process_file` Tauri command converts blob data to temp files
-- **Location:** `src/components/MediaLibrary.tsx`
 - **Status:** ✅ Fixed - Lazy path generation for performance
 
-### Issue 2: Timeline Zoom Label Overlap
-- **Problem:** At high zoom levels, time markers overlap and become unreadable
-- **Solution:** Implemented adaptive marker intervals based on zoom level
-- **Location:** `src/components/Timeline.tsx` lines 89-100
-- **Fix:** Dynamic intervals prevent too many markers from rendering
-- **Status:** ✅ Fixed
+### Issue 2: Recording Not Starting ✅ FIXED
+- **Problem:** Auto-detection of screens was unreliable, recordings would hang
+- **Root Causes:**
+  1. Browser labels for screens were inconsistent ("ClipForge" vs "Screen 0")
+  2. Complex auto-detection logic had race conditions
+  3. State updates were overwriting device selections
+  4. Stale closures in useCallback dependencies
+- **Solution:** Complete system rewrite with:
+  - Manual device selection via dropdowns
+  - `list_devices` command to enumerate all devices
+  - Simplified recording flow with no auto-detection
+  - Functional state updates to prevent overwrites
+  - useRef for persistent device selections
+- **Status:** ✅ Fixed - Recordings start reliably with device selection
 
-### Issue 3: Single Page Layout
-- **Problem:** Page-level scrolling was disrupting the timeline experience
-- **Solution:** Added `overflow-hidden` to containers, made timeline self-contained with horizontal scroll
-- **Location:** `src/App.tsx`, `src/components/Timeline.tsx`
-- **Fix:** 
-  - App uses `h-screen w-screen overflow-hidden`
-  - Timeline uses `overflow-x-auto` for horizontal scrolling only
-  - Media library has internal `overflow-y-auto`
-- **Status:** ✅ Fixed
+### Issue 3: PiP Webcam Overlay Not Showing ✅ FIXED
+- **Problem:** Webcam overlay wouldn't appear in PiP mode
+- **Solution:** 
+  - Separate MediaStream management for screen and webcam
+  - Attached streams as custom properties (`__screenStream`, `__webcamStream`)
+  - Dedicated `<video>` element with refs for webcam overlay
+  - Dynamic positioning based on `pipPosition` state
+  - Visual container with border to debug visibility
+- **Status:** ✅ Fixed - Webcam overlay now displays correctly in all 4 corners
 
-### Issue 4: Tauri Permissions
-- **Problem:** Invalid permission names in capabilities
-- **Solution:** Use only core: permissions, remove fs: and dialog: permissions
-- **Location:** `src-tauri/capabilities/default.json`
-- **Status:** ✅ Fixed
+### Issue 4: Screen Selection Mismatch ✅ FIXED
+- **Problem:** Selected screen in dropdown didn't match recorded screen
+- **Solution:**
+  - Removed unreliable auto-detection heuristics
+  - Manual selection takes priority
+  - Device indices passed directly to FFmpeg
+  - `selectedScreenIndexRef` for immediate access in callbacks
+- **Status:** ✅ Fixed - Selected screen always matches recording
 
-### Issue 5: Media Recording APIs ✅ FIXED
-- **Problem:** `navigator.mediaDevices` is undefined in Tauri's webview environment
-- **Error:** `TypeError: undefined is not an object (evaluating 'navigator.mediaDevices.getDisplayMedia')`
-- **Root Cause:** Tauri's webview (wry) doesn't expose browser media APIs by default
-- **Solution:** Implemented native Rust-based recording using FFmpeg
-  - Added `start_recording`, `stop_recording`, `is_recording`, `read_file_bytes` Tauri commands
-  - Uses FFmpeg with avfoundation for macOS screen/webcam capture
-  - Recordings saved to `/tmp` directory with timestamp filenames
-  - Device mapping: [0] MacBook Camera (webcam), [4] Capture screen 0 (screen recording)
-  - Screen recording uses device 4, webcam uses device 0
-  - Recorded files read via `read_file_bytes` and converted to blob URLs for timeline
-- **Location:** 
-  - `src-tauri/src/main.rs` - Rust recording commands with device configuration
-  - `src/hooks/useRecording.ts` - Updated to use Tauri invoke, handles file reading
-  - `src/components/RecordingControls.tsx` - Recording UI
-- **Status:** ✅ Implemented - Native recording using FFmpeg with correct device mapping
+---
 
-### Issue 6: Recording Not Starting ⚠️ DEBUGGING
-- **Problem:** User clicks record button but nothing happens - recording doesn't start
-- **Potential Causes:**
-  1. **macOS Permissions:** Screen recording and microphone permissions not granted
-     - System Settings > Privacy & Security > Screen Recording
-     - System Settings > Privacy & Security > Microphone
-  2. **FFmpeg Not Found:** System doesn't have FFmpeg installed or not in PATH
-  3. **Device Mapping Issue:** FFmpeg device indices may have changed
-     - Expected: Device 4 for screen, Device 0 for webcam
-     - May need to run `ffmpeg -f avfoundation -list_devices true -i ""` to verify
-  4. **Tauri Command Error:** Invoke call failing silently
-- **Debugging Steps:**
-  - Run app in dev mode: `npm run tauri:dev` to see console errors
-  - Check macOS Console.app for errors
-  - Verify FFmpeg installation: `which ffmpeg && ffmpeg -version`
-  - Test FFmpeg device listing: `ffmpeg -f avfoundation -list_devices true -i ""`
-- **Location:** 
-  - `src/hooks/useRecording.ts` line 25-71 (startScreenRecording)
-  - `src-tauri/src/main.rs` line 117-155 (start_recording command)
-- **Status:** 🔍 In Progress - Debugging in development mode
+## Recent Major Updates (January 2025)
+
+### Advanced Recording System (Latest - January 2025) ✅
+- **Complete Rewrite:** Rebuilt entire recording system from scratch
+- **Device Enumeration:** New `list_devices` Tauri command enumerates all screens, webcams, and audio devices
+- **Device Selection UI:** Dropdown menus for selecting specific screens and webcams
+- **Three Recording Modes:**
+  1. Screen-only recording with audio
+  2. Webcam-only recording with audio
+  3. Picture-in-picture with live preview (screen + webcam overlay)
+- **PiP Positioning:** 4-corner positioning system (top-left, top-right, bottom-left, bottom-right)
+- **Smart UI:** Recording indicator automatically repositions to avoid overlapping webcam
+- **Robust State Management:** Functional updates prevent state overwrites
+- **Simplified Flow:** Removed unreliable auto-detection in favor of manual selection
+- **Error Handling:** Comprehensive error messages and graceful degradation
+- **Files Updated:**
+  - `src-tauri/src/main.rs` - New `list_devices` command, updated `start_recording`
+  - `src/hooks/useRecording.ts` - Complete rewrite with device management
+  - `src/components/RecordingControls.tsx` - New device selection UI
+  - `src/components/VideoPreview.tsx` - PiP positioning support
+  - `src/App.tsx` - Integration of new recording props
+
+### Playback Continuity & Track Selection (January 2025) ✅
+- **Seamless Clip Transitions:** Video playback automatically transitions between clips on same track
+- **Track Label Clicking:** Clicking track labels moves playhead to first clip
+- **Preferred Track System:** Prioritizes clips from selected/preferred tracks
+- **Smart Split Function:** Respects selected clip's track
+- **Files Updated:**
+  - `src/store/timelineStore.ts`
+  - `src/components/VideoPreview.tsx`
+  - `src/components/Timeline.tsx`
+  - `src/components/TrimToolbar.tsx`
+
+### Dynamic Tracks & Smart Labels (January 2025) ✅
+- **Infinite Track System:** Unlimited tracks via drag-below-last-track
+- **Smart Track Labels:** Auto-labeled based on recording type
+- **Vertical Scrolling:** Timeline scrolls as tracks are added
+- **Files Updated:**
+  - `src/store/timelineStore.ts`
+  - `src/hooks/useRecording.ts`
+  - `src/components/Timeline.tsx`
+
+### Master Track System (January 2025) ✅
+- **Green Master Track:** Final output track with automatic continuity
+- **Blue Source Tracks:** Staging tracks for clip organization
+- **Clip Copy Behavior:** Dragging to master creates copy, keeps original
+- **Files Updated:**
+  - `src/store/timelineStore.ts`
+  - `src/components/Timeline.tsx`
 
 ---
 
@@ -316,19 +418,11 @@ clipforge/
 ### Running in Development
 ```bash
 source "$HOME/.cargo/env"
-npm run tauri dev
-# Or use the dev.sh script:
-bash dev.sh
-# Or use the npm script:
 npm run tauri:dev
 ```
 
 ### Building for Production
 ```bash
-source "$HOME/.cargo/env"
-npm run build
-npm run tauri build
-# Or use the npm script:
 npm run tauri:build
 ```
 
@@ -336,12 +430,6 @@ npm run tauri:build
 - **Development binary:** `src-tauri/target/debug/clipforge`
 - **Production .app:** `src-tauri/target/release/bundle/macos/clipforge.app`
 - **App size:** ~12MB
-
-### Hot Reload
-- Vite HMR updates frontend code automatically
-- Tauri recompiles Rust backend on changes
-- Check terminal for compilation status
-- Press Ctrl+C to stop dev server
 
 ---
 
@@ -352,162 +440,51 @@ npm run tauri:build
 brew install ffmpeg
 ```
 
-### Export Command Generated
+### Export Command
 ```bash
-ffmpeg -i INPUT_PATH -ss START_TIME -t DURATION \
-       -c:v libx264 -c:a aac -preset medium -y OUTPUT_PATH
+ffmpeg -i INPUT -ss START -t DURATION \
+  -c:v libx264 -c:a aac -preset medium -y OUTPUT
 ```
-
-### Progress Tracking
-- Currently not implemented (FFmpeg stdout parsing)
-- Future: Parse FFmpeg stderr for frame progress
 
 ---
 
 ## Testing Checklist
 
-### MVP Testing (Required)
-- [ ] App launches from packaged .app
-- [ ] Import 3 video files via drag & drop
-- [ ] Timeline displays imported clips
-- [ ] Preview plays imported video
-- [ ] Trim clip by adjusting start/end
-- [ ] Export to MP4 successfully
-- [ ] Exported video plays in external player
+### Recording System Testing
+- [x] App lists available screens correctly
+- [x] App lists available webcams correctly
+- [x] Screen recording works with selected screen
+- [x] Webcam recording works with selected webcam
+- [x] PiP recording shows both streams in preview
+- [x] PiP webcam overlay appears in all 4 corners
+- [x] Recording indicator repositions to avoid overlap
+- [x] Recordings save to timeline automatically
+- [x] Device selection persists during recording session
 
-### Test Data
-- Test videos in user's Desktop directory
-- Known test file: "Screen Recording 2025-10-27 at 8.36.57 PM.mov" (442 seconds)
-
----
-
-## Important Code Patterns
-
-### Drag & Drop
-- External drops (from Finder): Use `file.path` for real file paths
-- Internal drags (within app): Use JSON data transfer
-- Drop zones: Timeline has full-width drop zones per track
-
-### Export Process
-1. User clicks Export button
-2. ExportDialog opens with clip info
-3. User selects output location (uses Documents by default)
-4. Frontend calls `export_video` Tauri command
-5. Rust executes FFmpeg command
-6. Progress shown, success/error displayed
-
-### Timeline Interaction
-- **Click:** Sets playhead position
-- **Scrub:** Drag to move playhead
-- **Trim:** Drag clip edges to adjust start/end (yellow handles)
-- **Zoom:** Buttons adjust pixelsPerSecond (10 * zoomLevel)
-- **Drag Clips:** Click and drag clips to reposition on timeline
-- **Master Track Drop:** Creates a copy of clip on master track, original stays in source
-- **Source Track Drop:** Moves clip to different source track position
-- **Clip Selection:** Click to select, Ctrl/Cmd+Click to multi-select (automatically sets preferred track)
-- **Track Label Click:** Click track label to jump playhead to first clip on that track
-- **Dynamic Track Creation:** Drag video below last track to create new track automatically
-- **Playback Continuity:** Playback automatically transitions between clips on same track without pausing
+### Core Functionality Testing
+- [x] App launches from packaged .app
+- [x] Import videos via drag & drop
+- [x] Timeline displays imported clips
+- [x] Preview plays imported video
+- [x] Trim clip by adjusting start/end
+- [x] Export to MP4 successfully
+- [x] Split/Merge functionality works
 
 ---
-
-## Recent Major Updates (January 2025)
-
-### Playback Continuity & Track Selection (Latest - January 2025) ✅
-- **Seamless Clip Transitions:** Video playback now automatically transitions from one clip to the next on the same track without pausing or looping
-- **Track Label Clicking:** Clicking track labels (Master Track, Source Track N) automatically moves playhead to first clip on that track
-- **Preferred Track System:** Added `preferredTrack` state to prioritize clips from selected/preferred tracks in video preview and split operations
-- **Clip Selection Sets Preferred Track:** Selecting a clip automatically sets it as the preferred track for operations
-- **Smart Split Function:** Split now respects selected clip's track, prioritizing selected track > preferred track > any clip
-- **Fixed Merge Continuity:** Merge operations on master track now properly maintain continuity and update playback
-- **Video Preview Priority:** Preview prioritizes master track clips over source tracks to match final output
-- **Improved Transition Handling:** Better handling of video source switching between clips with proper loading states
-- **Prevented Playback Loops:** Added logic to prevent timeline from looping back to beginning when clips end
-- **Abort Error Handling:** Gracefully handles video abort errors when switching between clip sources
-- **Files Updated:**
-  - `src/store/timelineStore.ts` - Added `preferredTrack`, `setPreferredTrack()`, improved `combineClips()`
-  - `src/components/VideoPreview.tsx` - Major playback continuity improvements, transition handling
-  - `src/components/Timeline.tsx` - Added track label click handlers, clip selection sets preferred track
-  - `src/components/TrimToolbar.tsx` - Updated split logic to respect selected/preferred tracks
-
-### UI Refinements & Bug Fixes (January 2025) ✅
-- **Reduced Timeline Heights:** Timeline and tracks made more compact (tracks: 65px, timeline: ~240px base)
-- **Improved Text Positioning:** Moved track labels and clip text closer to top for better visibility
-- **Toolbar Display Update:** Changed toolbar display from "Track Label [badge]" to "Track Label - Video Name" format
-- **Removed Button-Style Badges:** Cleaned up toolbar by removing separate track label badges
-- **Fixed Drop Zone Issues:** Removed blocking overlays that prevented dragging to Source Track 2+
-- **Fixed JSON Parse Error:** Added validation to prevent errors when dropping non-JSON data on preview
-- **Micro Tick Marks:** Added minor tick marks in timeline ruler for better granularity
-- **Complete Grid Lines:** All vertical grid lines and playhead now extend properly through all tracks
-- **Centered Playhead:** Playhead line properly centered under triangle indicator
-
-### Dynamic Tracks & Smart Labels (January 2025) ✅
-- **Infinite Track System:** Users can now create unlimited tracks by dragging videos below the last track
-- **Automatic Track Creation:** Drop zone appears below all tracks to create new tracks dynamically
-- **Smart Track Labels:** Tracks automatically labeled as "Screen Recording N" or "Camera Recording N" based on clip types
-- **Track Display in Toolbar:** Shows current track for clip at playhead and selected clips
-- **Vertical Scrolling:** Timeline scrolls vertically as tracks are added
-- **Recording Type Tracking:** Screen and webcam recordings properly tracked and labeled
-- **Files Updated:** 
-  - `src/store/timelineStore.ts` - Added `numSourceTracks`, `getNextAvailableTrack()`, `ensureTrackExists()`, `getTrackLabel()`
-  - `src/hooks/useRecording.ts` - Added `recordingType` tracking and assignment
-  - `src/components/Timeline.tsx` - Added dynamic track rendering with new track drop zone
-  - `src/components/TrimToolbar.tsx` - Added track label display for current/selected clips
-
-### Master Track System & Video Trimming (Latest - January 2025)
-- ✅ **Master Track System** - Green-themed output track (track 0) for final video
-- ✅ **Source Tracks** - Blue-themed staging tracks (1, 2) for organizing clips
-- ✅ **Clip Copy Behavior** - Dragging to master track creates a copy, original stays in source
-- ✅ **New Clips Start at 0:00** - All new clips automatically positioned at beginning
-- ✅ **Automatic Continuity** - Master track automatically prevents gaps between clips
-- ✅ **Fixed Video Trimming** - Playback now correctly respects startTime and endTime trim points
-- ✅ **Playhead Visualization** - Red line spans full timeline height through all tracks
-- ✅ **Dynamic Zoom Timeline** - Timeline extends based on zoom level (30 min at 0.2x, etc.)
-- ✅ **Optimized Track Heights** - 65px per track (reduced from 100px) for compact timeline while maintaining usability
-- ✅ **Improved Marker Intervals** - Adaptive spacing prevents clutter at all zoom levels
-
-### UI Redesign & Professional Icon Pack
-- ✅ **Complete UI redesign** - More professional, video editor-like interface
-- ✅ **Lucide React icons** - Professional icon library installed and integrated
-- ✅ **Larger preview area** - Black background like Premiere Pro/Final Cut
-- ✅ **Narrower media library** (56px) - More space for timeline editing
-- ✅ **Taller timeline** (288px) - Better clip manipulation with 80px tracks
-- ✅ **Compact header** - "Cut • Merge • Export" tagline
-- ✅ **Trim Toolbar** - Prominent editing tools with status indicators
-- ✅ **Track labels** - Clear "Track 1"/"Track 2" labels on timeline
-- ✅ **Enhanced clips** - Gradients, shadows, duration display, yellow trim handles
-
-### Split & Merge Functionality
-- ✅ **Split clip feature** - Split clips at playhead position
-- ✅ **Merge clips feature** - Combine adjacent clips into one
-- ✅ **Clip selection** - Click to select, Ctrl/Cmd to multi-select
-- ✅ **Visual feedback** - White ring on selected clips
-
-### Export Improvements
-- ✅ **Blob URL handling** - Converts blob URLs to temp files for export
-- ✅ **Lazy path generation** - Fast import, convert only on export
-- ✅ **Progress estimation** - Simulated progress based on video characteristics
-- ✅ **Better error messages** - Clear, actionable error displays
-
-### Architecture Improvements
-- ✅ **Dual path system** - `blobUrl` for preview, `path` for export
-- ✅ **File size tracking** - Optional `fileSize` property for export estimation
-- ✅ **State management** - Added `selectedClips` and selection management
 
 ## Next Steps (Future Enhancements)
 
 ### Short Term
-1. Add keyboard shortcuts (S for split, C for combine, etc.)
-2. Improve trim handle visibility and responsiveness
-3. Add snap-to-grid functionality
-4. Implement clip dragging on timeline
+1. True PiP recording with FFmpeg filter_complex (webcam composited into recording)
+2. Add keyboard shortcuts (S for split, C for combine, etc.)
+3. Webcam overlay on master track for export
+4. Snap-to-grid functionality
 
-### Long Term (Phase 4+)
-1. Screen recording using `getDisplayMedia()`
-2. Webcam recording using `getUserMedia()`
-3. Picture-in-picture support
-4. Audio waveform visualization
-5. Multiple clip export (concatenate)
+### Long Term
+1. Audio waveform visualization
+2. Multiple clip export (concatenate)
+3. Transitions and effects
+4. Cross-platform support (Windows/Linux)
 
 ---
 
@@ -530,21 +507,6 @@ ffmpeg -i INPUT_PATH -ss START_TIME -t DURATION \
 }
 ```
 
-## UI Components Overview
-
-### App Layout (`src/App.tsx`)
-- **Header**: Compact with app name, tagline, and Export button
-- **Media Library**: 56px width sidebar for video files
-- **Preview**: Large black background area (takes most space)
-- **Trim Toolbar**: Above timeline with Split/Merge buttons
-- **Timeline**: 288px height with 80px tall tracks
-
-### TrimToolbar (`src/components/TrimToolbar.tsx`)
-- **Split**: Split clip at playhead position (blue button)
-- **Merge**: Combine selected clip with adjacent (purple button)
-- **Status**: Shows current clip and selected count
-- **Icons**: Lucide React (Scissors, Merge icons)
-
 ### Backend (Cargo.toml)
 ```toml
 [dependencies]
@@ -558,25 +520,19 @@ serde_json = "1"
 ## Performance Characteristics
 
 - **App Size:** ~12MB
-- **Launch Time:** Target <5 seconds
+- **Launch Time:** <5 seconds
 - **Timeline Performance:** Responsive with 10+ clips
-- **Preview FPS:** 30fps target
+- **Recording:** 30fps screen/webcam capture
 - **Memory Usage:** <500MB baseline
 
 ---
 
 ## Git Configuration
 
-### .gitignore Includes
-- `node_modules/`
-- `src-tauri/target/`
-- `.DS_Store`
-- `dist/`
-
 ### Repository Status
 - Main branch: Up to date with origin
-- TASKS.md: Tracking project progress
-- No documentation in repository (docs/ folder present but minimal)
+- Clean working tree
+- MEMORY_BANK.md: Comprehensive project documentation
 
 ---
 
@@ -588,57 +544,6 @@ serde_json = "1"
 - FFmpeg (via `brew install ffmpeg`)
 - Tauri CLI (via `npm install -g @tauri-apps/cli`)
 
-### Shell Scripts
-- `dev.sh`: Development server launcher (sources cargo env)
-- `package.json` has scripts for tauri:dev and tauri:build
-
 ---
 
-## Architecture Diagram
-
-```
-┌─────────────────────────────────────────┐
-│          Frontend (React)               │
-│  ┌──────────┐  ┌──────────────────┐   │
-│  │  Media   │  │    Timeline      │   │
-│  │  Library │  │   (Zustand)      │   │
-│  └────┬─────┘  └────┬─────────────┘   │
-│       │             │                   │
-│  ┌────▼─────────────▼──────┐          │
-│  │    Video Preview        │          │
-│  └─────────────────────────┘          │
-└─────────────────┬───────────────────────┘
-                  │ IPC (Tauri)
-┌─────────────────▼───────────────────────┐
-│     Backend (Rust/Tauri)               │
-│  ┌──────────────────────────────────┐ │
-│  │   Tauri Commands:                │ │
-│  │   - export_video()               │ │
-│  │   - check_ffmpeg()              │ │
-│  │   - get_documents_path()        │ │
-│  └─────────────┬──────────────────┘ │
-└────────────────┼──────────────────────┘
-                 │ Process Execution
-         ┌───────▼───────┐
-         │    FFmpeg     │
-         │   (System)    │
-         └───────────────┘
-```
-
----
-
-## Contact & Resources
-
-### Project Files
-- PRD: `docs/PRD.md`
-- Tasks: `TASKS.md`
-- Architecture: `docs/ARCHITECTURE.md`
-
-### External Resources
-- Tauri Docs: https://tauri.app
-- FFmpeg Docs: https://ffmpeg.org/documentation.html
-- React Docs: https://react.dev
-
----
-
-**Note:** This memory bank should be updated as the project evolves. Key changes should be documented here for reference and continuity.
+**Note:** This memory bank is kept up-to-date with major project changes. Last updated with Phase 6 - Advanced Recording System implementation.
